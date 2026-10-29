@@ -18,6 +18,11 @@ import {
   salt as proxyFactorySalt,
 } from "../factory/proxyFactory.js";
 
+import {
+  bytecode as moduleSetupFactoryBytecode,
+  salt as moduleSetupFactorySalt,
+} from "../factory/moduleSetupFactory.js";
+
 import deployMastercopy from "./deployMastercopy.js";
 import waitForTransaction from "./waitForTransaction.js";
 
@@ -29,10 +34,11 @@ import { EIP1193Provider } from "../types.js";
  * This function deploys the following factories:
  * - `NickSingletonFactory`
  * - `ERC2470SingletonFactory`
- * - `ZodiacModuleProxyFactory`
+ * - `ModuleProxyFactory`
+ * - `ModuleSetupFactory`
  *
  * The first two factories, `NickSingletonFactory` and `ERC2470SingletonFactory`, use known presigned transactions for deployment.
- * The `ZodiacModuleProxyFactory` is deployed as a singleton via the `ERC2470SingletonFactory`.
+ * The `ModuleProxyFactory` and `ModuleSetupFactory` are deployed as singletons via the `ERC2470SingletonFactory`.
  *
  * If all factories are already deployed, this function performs no operation.
  *
@@ -68,6 +74,13 @@ export default async function ({
     bytecode: proxyFactoryBytecode,
     constructorArgs: { types: [], values: [] },
     salt: proxyFactorySalt,
+    provider,
+  });
+
+  await deployMastercopy({
+    bytecode: moduleSetupFactoryBytecode,
+    constructorArgs: { types: [], values: [] },
+    salt: moduleSetupFactorySalt,
     provider,
   });
 }
