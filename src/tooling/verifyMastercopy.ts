@@ -3,13 +3,13 @@ import { verifySourceCode } from "./etherscan.js";
 /**
  * Verifies a Mastercopy contract on an Etherscan-like block explorer.
  *
- * This function submits the source code and metadata of a Mastercopy contract to a block explorer
- * for verification. It interacts with the explorer's API using the provided API key and endpoint.
+ * On Etherscan V2, this function waits for the explorer to confirm verification.
+ * Legacy explorer endpoints return after accepting the verification submission.
  *
  * @param {Object} params - The parameters required for verification.
  * @param {number} params.chainId - The chain ID.
  * @param {string} params.apiKey - The API key for authenticating requests to the block explorer.
- * @param {Object} params.artifact - The contract data required for verification.
+ * @param {Object} params.artifact - The contract data, including the Solidity standard JSON input with its dependencies and library settings.
  * @param {string} [params.apiUrl] - Optional custom API URL. If not provided, will use the default for the chain.
  *
  * @returns {Promise<{ address: string; noop: boolean }>} A promise that resolves to an object containing:
