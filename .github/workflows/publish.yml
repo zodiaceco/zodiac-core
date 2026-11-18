@@ -2,11 +2,11 @@ name: Version release
 
 on:
   release:
-    types: [created]
+    types: [published]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
@@ -22,16 +22,18 @@ jobs:
 
   publish-npm:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-          scope: "@gnosis-guild"
       - run: yarn
       - run: yarn build
+      # npm authenticates through the trusted publisher for this workflow.
       - name: Publish to npm
         run: |
           # If the release is marked as latest on GitHub, omit the npm tag and
@@ -40,12 +42,10 @@ jobs:
           latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)"
 
           if [ "$GITHUB_REF_NAME" = "$latest_tag" ]; then
-            npm publish --access public --non-interactive
+            npm publish --access public
           else
             major="$(echo "$GITHUB_REF_NAME" | sed -E 's/^v?([0-9]+).*/\1/')"
-            npm publish --access public --tag "v-${major}" --non-interactive
+            npm publish --access public --tag "v-${major}"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
-          NPM_AUTH_TOKEN: ${{secrets.PUBLISH_NPM_TOKEN}}
-          NODE_AUTH_TOKEN: ${{secrets.PUBLISH_NPM_TOKEN}}
