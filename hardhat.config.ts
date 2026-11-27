@@ -1,8 +1,8 @@
 import { existsSync } from "fs";
-import hardhatEthersPlugin from "@nomicfoundation/hardhat-ethers";
-import hardhatChaiMatchersPlugin from "@nomicfoundation/hardhat-ethers-chai-matchers";
-import hardhatMochaPlugin from "@nomicfoundation/hardhat-mocha";
 import hardhatNetworkHelpersPlugin from "@nomicfoundation/hardhat-network-helpers";
+import hardhatNodeTestRunnerPlugin from "@nomicfoundation/hardhat-node-test-runner";
+import hardhatViemPlugin from "@nomicfoundation/hardhat-viem";
+import hardhatViemAssertionsPlugin from "@nomicfoundation/hardhat-viem-assertions";
 import { defineConfig } from "hardhat/config";
 
 if (existsSync(".env")) process.loadEnvFile(".env");
@@ -19,9 +19,9 @@ const accounts = PK
 
 export default defineConfig({
   plugins: [
-    hardhatEthersPlugin,
-    hardhatChaiMatchersPlugin,
-    hardhatMochaPlugin,
+    hardhatViemPlugin,
+    hardhatViemAssertionsPlugin,
+    hardhatNodeTestRunnerPlugin,
     hardhatNetworkHelpersPlugin,
   ],
   paths: {
@@ -95,12 +95,6 @@ export default defineConfig({
       type: "http",
       url: "https://rpc.test.btcs.network",
       accounts,
-    },
-  },
-
-  test: {
-    mocha: {
-      timeout: 2_000_000,
     },
   },
 });

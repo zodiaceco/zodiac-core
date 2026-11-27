@@ -6,7 +6,8 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rewriteRelativeImportExtensions": true,
-    "noEmit": false
+    "noEmit": false,
+    "types": []
   },
   "include": ["src/**/*.ts"]
 }

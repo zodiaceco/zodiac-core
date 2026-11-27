@@ -1,41 +1,38 @@
-import { expect } from "chai";
+import assert from "node:assert/strict";
+import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { artifacts, network } from "hardhat";
 
-import createEIP1193 from "./createEIP1193";
+import withSender from "../test-helpers/eip1193";
 
 import { deployFactories, deployMastercopy, deployProxy } from "../src/tooling";
 import { predictProxyAddress } from "../src/index";
 
 const connection = await network.create();
-const { ethers, networkHelpers, provider: hardhatProvider } = connection;
+const { viem, networkHelpers, provider: hardhatProvider } = connection;
 const { loadFixture } = networkHelpers;
-
-async function setup() {
-  const TestModule = await ethers.getContractFactory("TestModule");
-  const bytecode = TestModule.bytecode;
-  const salt =
-    "0x0000000000000000000000000000000000000000000000000000000000000001";
-  const constructorArgs = {
-    types: ["address", "address"],
-    values: [avatar, target],
-  };
-
-  const [signer] = await ethers.getSigners();
-  const provider = createEIP1193(hardhatProvider, signer);
-  await deployFactories({ provider });
-  const { address } = await deployMastercopy({
-    bytecode,
-    constructorArgs,
-    salt,
-    provider,
-  });
-
-  return { mastercopy: address };
-}
 
 const avatar = "0x0000000000000000000000000000000000000123";
 const target = "0x0000000000000000000000000000000000000456";
+
+async function setup() {
+  const [wallet] = await viem.getWalletClients();
+  const provider = withSender(hardhatProvider, wallet.account.address);
+
+  const { bytecode } = await artifacts.readArtifact("TestModule");
+  await deployFactories({ provider });
+  const { address } = await deployMastercopy({
+    bytecode,
+    constructorArgs: {
+      types: ["address", "address"],
+      values: [avatar, target],
+    },
+    salt: "0x0000000000000000000000000000000000000000000000000000000000000001",
+    provider,
+  });
+
+  return { mastercopy: address, provider };
+}
 
 describe("deployProxy", () => {
   after(async () => {
@@ -43,17 +40,15 @@ describe("deployProxy", () => {
   });
 
   it("Deploys a proxy at the predicted address", async () => {
-    const { mastercopy } = await loadFixture(setup);
+    const { mastercopy, provider } = await loadFixture(setup);
+    const publicClient = await viem.getPublicClient();
 
-    const [signer] = await ethers.getSigners();
-    const { provider } = ethers;
-
-    const avatar = "0x0000000000000000000000000000000000000789";
-    const target = "0x0000000000000000000000000000000000000345";
+    const proxyAvatar = "0x0000000000000000000000000000000000000789";
+    const proxyTarget = "0x0000000000000000000000000000000000000345";
 
     const setupArgs = {
       types: ["address", "address"],
-      values: [avatar, target],
+      values: [proxyAvatar, proxyTarget],
     };
 
     const address = predictProxyAddress({
@@ -62,23 +57,26 @@ describe("deployProxy", () => {
       saltNonce: 1,
     });
 
-    expect(await provider.getCode(mastercopy)).to.not.equal("0x");
-    expect(await provider.getCode(address)).to.equal("0x");
+    assert.notEqual(
+      await publicClient.getCode({ address: mastercopy }),
+      undefined
+    );
+    assert.equal(await publicClient.getCode({ address }), undefined);
 
-    await deployProxy({
-      mastercopy,
-      setupArgs,
-      saltNonce: 1,
-      provider: createEIP1193(hardhatProvider, signer),
-    });
+    assert.deepEqual(
+      await deployProxy({ mastercopy, setupArgs, saltNonce: 1, provider }),
+      { address, noop: false }
+    );
 
-    expect(await provider.getCode(address)).to.not.equal("0x");
+    assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const proxy = (await ethers.getContractAt(
-      "TestModule",
-      address,
-      signer
-    )) as any;
-    expect(await proxy.avatar()).to.equal(avatar);
+    const proxy = await viem.getContractAt("TestModule", address);
+    assert.equal(await proxy.read.avatar(), proxyAvatar);
+    assert.equal(await proxy.read.target(), proxyTarget);
+
+    assert.deepEqual(
+      await deployProxy({ mastercopy, setupArgs, saltNonce: 1, provider }),
+      { address, noop: true }
+    );
   });
 });

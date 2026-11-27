@@ -1,20 +1,13 @@
-import { expect } from "chai";
-import { type BigNumberish, ZeroAddress, keccak256, toUtf8Bytes } from "ethers";
+import assert from "node:assert/strict";
+import { after, describe, it } from "node:test";
 
 import { network } from "hardhat";
+import { concat, size, zeroAddress, type Address, type Hex } from "viem";
 
-import typedDataForTransaction from "./typedDataForTransaction";
-
-type ModuleTx = {
-  to: string;
-  value: BigNumberish;
-  data: string;
-  operation: number;
-  salt: string;
-};
+import { salt, signModuleTx, type ModuleTx } from "../test-helpers/moduleTx";
 
 const connection = await network.create();
-const { ethers, networkHelpers } = connection;
+const { viem, networkHelpers } = connection;
 const { loadFixture } = networkHelpers;
 
 describe("SignatureChecker", () => {
@@ -23,120 +16,108 @@ describe("SignatureChecker", () => {
   });
 
   async function setup() {
-    const [signer, relayer] = await ethers.getSigners();
-    const TestSignature = await ethers.getContractFactory("TestSignature");
-    const testSignature = await TestSignature.deploy();
+    const [signer, relayer] = await viem.getWalletClients();
+    const deployed = await viem.deployContract("TestSignature");
+    const testSignature = await viem.getContractAt(
+      "TestSignature",
+      deployed.address,
+      { client: { wallet: relayer } }
+    );
 
-    return {
-      testSignature: (await ethers.getContractAt(
-        "TestSignature",
-        await testSignature.getAddress(),
-        relayer
-      )) as any,
-      signer,
-      relayer,
-    };
+    return { testSignature, signer, relayer };
   }
+
+  type TestSignature = Awaited<ReturnType<typeof setup>>["testSignature"];
 
   function moduleTx(overrides: Partial<ModuleTx> = {}): ModuleTx {
     return {
       to: "0x0000000000000000000000000000000000000099",
-      value: 0,
+      value: 0n,
       data: "0x",
       operation: 0,
-      salt: keccak256(toUtf8Bytes("default salt")),
       ...overrides,
     };
   }
 
-  async function signEOA(contract: string, tx: ModuleTx) {
-    const [signer] = await ethers.getSigners();
-    const { domain, types, message } = typedDataForTransaction(
-      { contract, chainId: 31337 },
-      tx
+  /**
+   * Relays `check` for `tx` and `signature` and asserts which signer the
+   * contract recovered.
+   */
+  async function expectRecovered(
+    testSignature: TestSignature,
+    tx: ModuleTx,
+    txSalt: Hex,
+    signature: Hex,
+    expected: Address
+  ) {
+    await viem.assertions.emitWithArgs(
+      testSignature.write.check([
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+        txSalt,
+        signature,
+      ]),
+      testSignature,
+      "Recovered",
+      [expected]
     );
-    return signer.signTypedData(domain, types, message);
   }
 
   it("recovers an EOA signature", async () => {
-    const { testSignature, signer, relayer } = await loadFixture(setup);
+    const { testSignature, signer } = await loadFixture(setup);
 
-    const tx = moduleTx({ salt: keccak256(toUtf8Bytes("hello salt")) });
-    const sig = await signEOA(await testSignature.getAddress(), tx);
+    const tx = moduleTx();
+    const txSalt = salt("hello salt");
+    const sig = await signModuleTx(signer, testSignature.address, tx, txSalt);
 
-    await expect(
-      relayer.sendTransaction(
-        await testSignature.check.populateTransaction(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation,
-          tx.salt,
-          "0x"
-        )
-      )
-    )
-      .to.emit(testSignature, "Recovered")
-      .withArgs(ZeroAddress);
-
-    await expect(
-      relayer.sendTransaction(
-        await testSignature.check.populateTransaction(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation,
-          tx.salt,
-          sig
-        )
-      )
-    )
-      .to.emit(testSignature, "Recovered")
-      .withArgs(signer.address);
+    await expectRecovered(testSignature, tx, txSalt, "0x", zeroAddress);
+    await expectRecovered(
+      testSignature,
+      tx,
+      txSalt,
+      sig,
+      signer.account.address
+    );
   });
 
   it("recovers a signature over non-trivial ModuleTx fields", async () => {
-    const { testSignature, signer, relayer } = await loadFixture(setup);
+    const { testSignature, signer } = await loadFixture(setup);
 
     const tx = moduleTx({
-      to: "0x000000000000000000000000000000000000DEAD",
+      to: "0x000000000000000000000000000000000000dEaD",
       value: 12345n,
       data: "0xbadfed",
       operation: 1,
-      salt: keccak256(toUtf8Bytes("nontrivial")),
     });
-    const sig = await signEOA(await testSignature.getAddress(), tx);
+    const txSalt = salt("nontrivial");
+    const sig = await signModuleTx(signer, testSignature.address, tx, txSalt);
 
-    await expect(
-      relayer.sendTransaction(
-        await testSignature.check.populateTransaction(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation,
-          tx.salt,
-          sig
-        )
-      )
-    )
-      .to.emit(testSignature, "Recovered")
-      .withArgs(signer.address);
+    await expectRecovered(
+      testSignature,
+      tx,
+      txSalt,
+      sig,
+      signer.account.address
+    );
   });
 
   describe("contract signature", () => {
+    const defaultSalt = salt("default salt");
+
     function makeContractSignature(
-      signerSpecificSignature: string,
-      signer: string
-    ) {
-      return `0x${signer.slice(2)}${signerSpecificSignature.slice(2)}`;
+      signerSpecificSignature: Hex,
+      signer: Address
+    ): Hex {
+      return concat([signer, signerSpecificSignature]);
     }
 
     it("uses the first 20 bytes as ERC1271 signer", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner =
-        await ethers.getContractFactory("ContractSignerYes");
-      const signer = await (await ContractSigner.deploy()).getAddress();
+      const { address: signer } =
+        await viem.deployContract("ContractSignerYes");
 
       const tx = moduleTx();
 
@@ -146,281 +127,160 @@ describe("SignatureChecker", () => {
       );
       const sigKnown = makeContractSignature("0xdddddd", signer);
 
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigUnknown
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigKnown
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(signer);
+      await expectRecovered(
+        testSignature,
+        tx,
+        defaultSalt,
+        sigUnknown,
+        zeroAddress
+      );
+      await expectRecovered(testSignature, tx, defaultSalt, sigKnown, signer);
     });
 
     it("signer returns isValid maybe", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner = await ethers.getContractFactory(
+      const { address: signer } = await viem.deployContract(
         "ContractSignerMaybe"
       );
-      const contractSigner = await ContractSigner.deploy();
-      const signer = await contractSigner.getAddress();
 
       const tx = moduleTx();
-
       const sigGood = makeContractSignature("0x001122334455", signer);
       const sigBad = makeContractSignature("0x00112233445566", signer);
 
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigGood
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigBad
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(testSignature, tx, defaultSalt, sigGood, signer);
+      await expectRecovered(
+        testSignature,
+        tx,
+        defaultSalt,
+        sigBad,
+        zeroAddress
+      );
     });
 
     it("signer returns isValid yes", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner =
-        await ethers.getContractFactory("ContractSignerYes");
-      const signer = await (await ContractSigner.deploy()).getAddress();
+      const { address: signer } =
+        await viem.deployContract("ContractSignerYes");
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0xaabbccddeeff", signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(signer);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        signer
+      );
     });
 
     it("signer returns isValid no", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner =
-        await ethers.getContractFactory("ContractSignerNo");
-      const signer = await (await ContractSigner.deploy()).getAddress();
+      const { address: signer } = await viem.deployContract("ContractSignerNo");
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0xaabbccddeeff", signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        zeroAddress
+      );
     });
 
     it("signer returns isValid for empty specific signature only", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner = await ethers.getContractFactory(
+      const { address: signer } = await viem.deployContract(
         "ContractSignerOnlyEmpty"
       );
-      const signer = await (await ContractSigner.deploy()).getAddress();
 
       const tx = moduleTx();
       const sigGood = makeContractSignature("0x", signer);
       const sigBad = makeContractSignature("0xffff", signer);
 
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigGood
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sigBad
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(testSignature, tx, defaultSalt, sigGood, signer);
+      await expectRecovered(
+        testSignature,
+        tx,
+        defaultSalt,
+        sigBad,
+        zeroAddress
+      );
     });
 
     it("supports empty ERC1271 contract signatures", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const ContractSigner = await ethers.getContractFactory(
+      const { address: signer } = await viem.deployContract(
         "ContractSignerOnlyEmpty"
       );
-      const signer = await (await ContractSigner.deploy()).getAddress();
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0x", signer);
+      assert.equal(size(sig), 20);
 
-      expect((sig.length - 2) / 2).to.equal(20);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(signer);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        signer
+      );
     });
 
     it("signer bad return size", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const Signer = await ethers.getContractFactory(
+      const { address: signer } = await viem.deployContract(
         "ContractSignerReturnSize"
       );
-      const signer = await (await Signer.deploy()).getAddress();
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0xaabbccddeeff", signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        zeroAddress
+      );
     });
 
     it("signer with faulty entrypoint", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
 
-      const Signer = await ethers.getContractFactory("ContractSignerFaulty");
-      const signer = await (await Signer.deploy()).getAddress();
+      const { address: signer } = await viem.deployContract(
+        "ContractSignerFaulty"
+      );
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0xaabbccddeeff", signer);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        zeroAddress
+      );
     });
 
     it("signer with no code deployed", async () => {
-      const { testSignature, relayer } = await loadFixture(setup);
+      const { testSignature } = await loadFixture(setup);
+      const publicClient = await viem.getPublicClient();
 
       const signerAddress = "0x1234567890000000000000000000000123456789";
-      expect(await ethers.provider.getCode(signerAddress)).to.equal("0x");
+      assert.equal(
+        await publicClient.getCode({ address: signerAddress }),
+        undefined
+      );
 
-      const tx = moduleTx();
       const sig = makeContractSignature("0xaabbccddeeff", signerAddress);
-
-      await expect(
-        relayer.sendTransaction(
-          await testSignature.check.populateTransaction(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation,
-            tx.salt,
-            sig
-          )
-        )
-      )
-        .to.emit(testSignature, "Recovered")
-        .withArgs(ZeroAddress);
+      await expectRecovered(
+        testSignature,
+        moduleTx(),
+        defaultSalt,
+        sig,
+        zeroAddress
+      );
     });
   });
 });

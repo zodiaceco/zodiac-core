@@ -1,23 +1,20 @@
-import { AbiCoder } from "ethers";
+import type { Address } from "viem";
+
+import { encodeArgs } from "../encoding/encodeArgs.js";
+import type { AbiArgs } from "../types.js";
 
 /**
- * Verifies the contract on a blockchain explorer using the provided API.
+ * Verifies a contract on an Etherscan-compatible block explorer.
  *
- * @param {Object} params - The function parameters.
- * @param {string} params.contractName - The name of the contract.
- * @param {string} params.sourceName - The source name of the contract.
- * @param {string} params.compilerVersion - The version of the compiler used.
- * @param {Object} params.compilerInput - The compiler input in standard JSON format.
- * @param {string} params.address - The address of the deployed contract.
- * @param {Object} params.constructorArgs - The constructor arguments of the contract.
- * @param {string[]} params.constructorArgs.types - The types of the constructor arguments.
- * @param {unknown[]} params.constructorArgs.values - The values of the constructor arguments.
- * @param {number} params.chainId - The chain ID.
- * @param {string} params.apiKey - The API key for the blockchain explorer.
- * @param {string} [params.apiUrl] - Optional custom API URL. Defaults to the explorer for the chain.
- *
- * @returns {Promise<{ noop: boolean }>} The verification result.
- * @throws {Error} If the API URL is unreachable, the API key is invalid, or the verification fails.
+ * @param params.contractName - Contract name.
+ * @param params.sourceName - Source file path of the contract.
+ * @param params.compilerVersion - Solidity compiler version string.
+ * @param params.compilerInput - Solidity standard JSON compiler input.
+ * @param params.address - Deployed contract address.
+ * @param params.constructorArgs - ABI-encoded constructor arguments.
+ * @param params.chainId - Chain ID.
+ * @param params.apiKey - Block explorer API key.
+ * @param params.apiUrl - Optional custom explorer API URL.
  */
 export async function verifySourceCode({
   contractName,
@@ -34,11 +31,8 @@ export async function verifySourceCode({
   sourceName: string;
   compilerVersion: string;
   compilerInput: unknown;
-  address: string;
-  constructorArgs: {
-    types: readonly string[];
-    values: readonly unknown[];
-  };
+  address: Address;
+  constructorArgs: AbiArgs;
   chainId: number;
   apiKey: string;
   apiUrl?: string;
@@ -61,9 +55,7 @@ export async function verifySourceCode({
     return { noop: true };
   }
 
-  const constructorArguments = AbiCoder.defaultAbiCoder()
-    .encode(types, values)
-    .slice(2);
+  const constructorArguments = encodeArgs({ types, values }).slice(2);
   const argumentField = explorer.isV2
     ? "constructorArguments"
     : "constructorArguements";

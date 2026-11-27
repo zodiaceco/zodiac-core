@@ -1,4 +1,4 @@
-import { toBeHex } from "ethers";
+import { numberToHex, type Address, type Hex } from "viem";
 import {
   funding as nickFunding,
   deployer as nickDeployer,
@@ -24,24 +24,10 @@ import waitForTransaction from "./waitForTransaction.js";
 import { EIP1193Provider } from "../types.js";
 
 /**
- * Deploys all factories within a specified network.
+ * Deploys Nick's factory, the ERC-2470 factory, and the ModuleProxyFactory on
+ * the target network if not already present. Mostly useful for local/test setups.
  *
- * This function deploys the following factories:
- * - `NickSingletonFactory`
- * - `ERC2470SingletonFactory`
- * - `ZodiacModuleProxyFactory`
- *
- * The first two factories, `NickSingletonFactory` and `ERC2470SingletonFactory`, use known presigned transactions for deployment.
- * The `ZodiacModuleProxyFactory` is deployed as a singleton via the `ERC2470SingletonFactory`.
- *
- * If all factories are already deployed, this function performs no operation.
- *
- * Note: Typically, these factories are already deployed across networks. This function is mostly useful for test setups.
- *
- * @param {Object} params - The function parameters.
- * @param {EIP1193Provider} params.provider - The EIP1193 compliant provider to interact with the blockchain.
- *
- * @returns {Promise<void>} A promise that resolves once the factories are deployed.
+ * @param params.provider - EIP-1193 provider to send deployment transactions.
  */
 export default async function ({
   provider,
@@ -73,16 +59,10 @@ export default async function ({
 }
 
 /**
- * Deploys a known factory contract.
+ * Deploys a presigned factory contract if not already present, funding its
+ * deployer first if needed.
  *
- * @param {Object} params - The function parameters.
- * @param {bigint} params.funding - The amount of funding to send to the deployer.
- * @param {string} params.deployer - The address of the deployer.
- * @param {string} params.signedTransaction - The signed transaction to deploy the factory.
- * @param {string} params.factoryAddress - The address of the factory contract.
- * @param {EIP1193Provider} params.provider - The EIP1193 compliant provider to interact with the blockchain.
- * @returns {Promise<void>} A promise that resolves once the factory is deployed.
- * @throws {Error} If the factory bytecode is not found after deployment.
+ * @throws If the factory bytecode is not found after deployment.
  */
 async function deployKnownFactory({
   funding,
@@ -92,9 +72,9 @@ async function deployKnownFactory({
   provider,
 }: {
   funding: bigint;
-  deployer: string;
-  signedTransaction: string;
-  factoryAddress: string;
+  deployer: Address;
+  signedTransaction: Hex;
+  factoryAddress: Address;
   provider: EIP1193Provider;
 }): Promise<void> {
   // Check if the factory contract is already deployed
@@ -119,8 +99,8 @@ async function deployKnownFactory({
     if (missingFunds > 0) {
       const hash = (await provider.request({
         method: "eth_sendTransaction",
-        params: [{ to: deployer, value: toBeHex(missingFunds) }],
-      })) as string;
+        params: [{ to: deployer, value: numberToHex(missingFunds) }],
+      })) as Hex;
       await waitForTransaction(hash, provider);
     }
   }
@@ -130,7 +110,7 @@ async function deployKnownFactory({
     const hash = (await provider.request({
       method: "eth_sendRawTransaction",
       params: [signedTransaction],
-    })) as string;
+    })) as Hex;
     await waitForTransaction(hash, provider);
   }
 

@@ -1,10 +1,11 @@
-import { ZeroAddress } from "ethers";
-import { expect } from "chai";
+import { after, describe, it } from "node:test";
 
 import { network } from "hardhat";
 
+import assertNotEmitted from "../test-helpers/assertNotEmitted";
+
 const connection = await network.create();
-const { ethers, networkHelpers } = connection;
+const { viem, networkHelpers } = connection;
 const { loadFixture } = networkHelpers;
 
 describe("Module", () => {
@@ -13,263 +14,218 @@ describe("Module", () => {
   });
 
   /**
-   * Sets up the test environment.
-   * Deploys the TestAvatar, TestModule, and TestGuard contracts.
-   * Enables the module in the avatar and prepares a transaction object for testing.
-   *
-   * @returns {Promise<{ iAvatar: any, guard: any, module: any, tx: object }>} The deployed contract instances and a sample transaction object.
+   * Deploys the TestAvatar, TestModule, and TestGuard contracts, enables the
+   * module in the avatar and prepares a transaction for testing.
    */
   async function setupTests() {
-    const Avatar = await ethers.getContractFactory("TestAvatar");
-    const avatar = await Avatar.deploy();
-    const iAvatar = await ethers.getContractAt(
-      "IAvatar",
-      await avatar.getAddress()
-    );
-    const Module = await ethers.getContractFactory("TestModule");
-    const module = await Module.deploy(
-      await iAvatar.getAddress(),
-      await iAvatar.getAddress()
-    );
-    await avatar.enableModule(await module.getAddress());
-    const Guard = await ethers.getContractFactory("TestGuard");
-    const guard = await Guard.deploy(await module.getAddress());
+    const [owner, wallet1] = await viem.getWalletClients();
+    const publicClient = await viem.getPublicClient();
+    const avatar = await viem.deployContract("TestAvatar");
+    const iAvatar = await viem.getContractAt("IAvatar", avatar.address);
+    const module = await viem.deployContract("TestModule", [
+      iAvatar.address,
+      iAvatar.address,
+    ]);
+    await avatar.write.enableModule([module.address]);
+    const guard = await viem.deployContract("TestGuard", [module.address]);
     const tx = {
-      to: await avatar.getAddress(),
-      value: 0,
+      to: avatar.address,
+      value: 0n,
       data: "0x",
       operation: 0,
-      avatarTxGas: 0,
-      baseGas: 0,
-      gasPrice: 0,
-      gasToken: ZeroAddress,
-      refundReceiver: ZeroAddress,
-      signatures: "0x",
-    };
-    return {
-      iAvatar,
-      guard,
-      module,
-      tx,
-    };
+    } as const;
+    return { owner, wallet1, publicClient, iAvatar, guard, module, tx };
   }
 
-  describe("setAvatar", async () => {
-    /**
-     * Tests setting the avatar.
-     * Verifies that setting the avatar reverts if the caller is not the owner.
-     */
+  describe("setAvatar", () => {
     it("reverts if caller is not the owner", async () => {
-      const { iAvatar, module } = await loadFixture(setupTests);
-      const [owner, wallet1] = await ethers.getSigners();
-      await module.transferOwnership(wallet1.address);
-      await expect(module.setAvatar(await iAvatar.getAddress()))
-        .to.be.revertedWithCustomError(module, "OwnableUnauthorizedAccount")
-        .withArgs(owner.address);
+      const { owner, wallet1, iAvatar, module } = await loadFixture(setupTests);
+      await module.write.transferOwnership([wallet1.account.address]);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        module.write.setAvatar([iAvatar.address]),
+        module,
+        "OwnableUnauthorizedAccount",
+        [owner.account.address]
+      );
     });
 
-    /**
-     * Tests setting the avatar.
-     * Verifies that the owner is allowed to set the avatar.
-     */
     it("allows owner to set avatar", async () => {
       const { iAvatar, module } = await loadFixture(setupTests);
-      await (await module.setAvatar(await iAvatar.getAddress())).wait();
+      await module.write.setAvatar([iAvatar.address]);
     });
 
-    /**
-     * Tests setting the avatar.
-     * Verifies that setting the avatar emits the AvatarSet event with the previous and new owner.
-     */
     it("emits previous owner and new owner", async () => {
-      const { iAvatar, module } = await loadFixture(setupTests);
-      const [, wallet1] = await ethers.getSigners();
-      await expect(module.setAvatar(wallet1.address))
-        .to.emit(module, "AvatarSet")
-        .withArgs(await iAvatar.getAddress(), wallet1.address);
+      const { wallet1, iAvatar, module } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        module.write.setAvatar([wallet1.account.address]),
+        module,
+        "AvatarSet",
+        [iAvatar.address, wallet1.account.address]
+      );
     });
   });
 
-  describe("setTarget", async () => {
-    /**
-     * Tests setting the target.
-     * Verifies that setting the target reverts if the caller is not the owner.
-     */
+  describe("setTarget", () => {
     it("reverts if caller is not the owner", async () => {
-      const { iAvatar, module } = await loadFixture(setupTests);
-      const [owner, wallet1] = await ethers.getSigners();
-      await module.transferOwnership(wallet1.address);
-      await expect(module.setTarget(await iAvatar.getAddress()))
-        .to.be.revertedWithCustomError(module, "OwnableUnauthorizedAccount")
-        .withArgs(owner.address);
+      const { owner, wallet1, iAvatar, module } = await loadFixture(setupTests);
+      await module.write.transferOwnership([wallet1.account.address]);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        module.write.setTarget([iAvatar.address]),
+        module,
+        "OwnableUnauthorizedAccount",
+        [owner.account.address]
+      );
     });
 
-    /**
-     * Tests setting the target.
-     * Verifies that the owner is allowed to set the target.
-     */
     it("allows owner to set avatar", async () => {
       const { iAvatar, module } = await loadFixture(setupTests);
-      await (await module.setTarget(await iAvatar.getAddress())).wait();
+      await module.write.setTarget([iAvatar.address]);
     });
 
-    /**
-     * Tests setting the target.
-     * Verifies that setting the target emits the TargetSet event with the previous and new owner.
-     */
     it("emits previous owner and new owner", async () => {
-      const { iAvatar, module } = await loadFixture(setupTests);
-      const [, wallet1] = await ethers.getSigners();
-      await expect(module.setTarget(wallet1.address))
-        .to.emit(module, "TargetSet")
-        .withArgs(await iAvatar.getAddress(), wallet1.address);
+      const { wallet1, iAvatar, module } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        module.write.setTarget([wallet1.account.address]),
+        module,
+        "TargetSet",
+        [iAvatar.address, wallet1.account.address]
+      );
     });
   });
 
-  describe("exec", async () => {
-    /**
-     * Tests executing a transaction.
-     * Verifies that guard pre-checks are skipped if no guard is set.
-     */
+  describe("exec", () => {
     it("skips guard pre-check if no guard is set", async () => {
       const { module, tx } = await loadFixture(setupTests);
-      await (
-        await module.executeTransaction(tx.to, tx.value, tx.data, tx.operation)
-      ).wait();
+      await module.write.executeTransaction([
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+      ]);
     });
 
-    /**
-     * Tests executing a transaction.
-     * Verifies that guard pre-checks are performed if a guard is set.
-     */
     it("pre-checks transaction if guard is set", async () => {
       const { guard, module, tx } = await loadFixture(setupTests);
-      await module.setGuard(await guard.getAddress());
-      await expect(
-        module.executeTransaction(tx.to, tx.value, tx.data, tx.operation)
-      ).to.emit(guard, "PreChecked");
+      await module.write.setGuard([guard.address]);
+      await viem.assertions.emit(
+        module.write.executeTransaction([
+          tx.to,
+          tx.value,
+          tx.data,
+          tx.operation,
+        ]),
+        guard,
+        "PreChecked"
+      );
     });
 
-    /**
-     * Tests executing a transaction.
-     * Verifies that a transaction can be executed.
-     */
     it("executes a transaction", async () => {
       const { module, tx } = await loadFixture(setupTests);
-      await (
-        await module.executeTransaction(tx.to, tx.value, tx.data, tx.operation)
-      ).wait();
+      await module.write.executeTransaction([
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+      ]);
     });
 
-    /**
-     * Tests executing a transaction.
-     * Verifies that guard post-checks are skipped if no guard is set.
-     */
     it("skips post-check if no guard is enabled", async () => {
-      const { guard, module, tx } = await loadFixture(setupTests);
-      await expect(
-        module.executeTransaction(tx.to, tx.value, tx.data, tx.operation)
-      ).not.to.emit(guard, "PostChecked");
+      const { publicClient, guard, module, tx } = await loadFixture(setupTests);
+      await assertNotEmitted(
+        publicClient,
+        module.write.executeTransaction([
+          tx.to,
+          tx.value,
+          tx.data,
+          tx.operation,
+        ]),
+        guard,
+        "PostChecked"
+      );
     });
 
-    /**
-     * Tests executing a transaction.
-     * Verifies that guard post-checks are performed if a guard is set.
-     */
     it("post-checks transaction if guard is set", async () => {
       const { guard, module, tx } = await loadFixture(setupTests);
-      await module.setGuard(await guard.getAddress());
-      await expect(
-        module.executeTransaction(tx.to, tx.value, tx.data, tx.operation)
-      )
-        .to.emit(guard, "PostChecked")
-        .withArgs(true);
+      await module.write.setGuard([guard.address]);
+      await viem.assertions.emitWithArgs(
+        module.write.executeTransaction([
+          tx.to,
+          tx.value,
+          tx.data,
+          tx.operation,
+        ]),
+        guard,
+        "PostChecked",
+        [true]
+      );
     });
   });
 
-  describe("execAndReturnData", async () => {
-    /**
-     * Tests executing a transaction and returning data.
-     * Verifies that guard pre-checks are skipped if no guard is set.
-     */
+  describe("execAndReturnData", () => {
     it("skips guard pre-check if no guard is set", async () => {
       const { module, tx } = await loadFixture(setupTests);
-      await (
-        await module.executeTransactionReturnData(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation
-        )
-      ).wait();
+      await module.write.executeTransactionReturnData([
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+      ]);
     });
 
-    /**
-     * Tests executing a transaction and returning data.
-     * Verifies that guard pre-checks are performed if a guard is set.
-     */
     it("pre-checks transaction if guard is set", async () => {
       const { guard, module, tx } = await loadFixture(setupTests);
-      await module.setGuard(await guard.getAddress());
-      await expect(
-        module.executeTransactionReturnData(
+      await module.write.setGuard([guard.address]);
+      await viem.assertions.emit(
+        module.write.executeTransactionReturnData([
           tx.to,
           tx.value,
           tx.data,
-          tx.operation
-        )
-      ).to.emit(guard, "PreChecked");
+          tx.operation,
+        ]),
+        guard,
+        "PreChecked"
+      );
     });
 
-    /**
-     * Tests executing a transaction and returning data.
-     * Verifies that a transaction can be executed and data can be returned.
-     */
     it("executes a transaction", async () => {
       const { module, tx } = await loadFixture(setupTests);
-      await (
-        await module.executeTransactionReturnData(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation
-        )
-      ).wait();
+      await module.write.executeTransactionReturnData([
+        tx.to,
+        tx.value,
+        tx.data,
+        tx.operation,
+      ]);
     });
 
-    /**
-     * Tests executing a transaction and returning data.
-     * Verifies that guard post-checks are skipped if no guard is set.
-     */
     it("skips post-check if no guard is enabled", async () => {
-      const { guard, module, tx } = await loadFixture(setupTests);
-      await expect(
-        module.executeTransactionReturnData(
+      const { publicClient, guard, module, tx } = await loadFixture(setupTests);
+      await assertNotEmitted(
+        publicClient,
+        module.write.executeTransactionReturnData([
           tx.to,
           tx.value,
           tx.data,
-          tx.operation
-        )
-      ).not.to.emit(guard, "PostChecked");
+          tx.operation,
+        ]),
+        guard,
+        "PostChecked"
+      );
     });
 
-    /**
-     * Tests executing a transaction and returning data.
-     * Verifies that guard post-checks are performed if a guard is set.
-     */
     it("post-checks transaction if guard is set", async () => {
       const { guard, module, tx } = await loadFixture(setupTests);
-      await module.setGuard(await guard.getAddress());
-      await expect(
-        module.executeTransactionReturnData(
+      await module.write.setGuard([guard.address]);
+      await viem.assertions.emitWithArgs(
+        module.write.executeTransactionReturnData([
           tx.to,
           tx.value,
           tx.data,
-          tx.operation
-        )
-      )
-        .to.emit(guard, "PostChecked")
-        .withArgs(true);
+          tx.operation,
+        ]),
+        guard,
+        "PostChecked",
+        [true]
+      );
     });
   });
 });

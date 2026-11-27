@@ -8,8 +8,14 @@
     "skipLibCheck": true,
     "strict": true,
     "target": "es2023",
-    "types": [],
+    "types": ["node"],
     "noEmit": true
   },
-  "include": ["hardhat.config.ts", "src", "tasks", "test"]
+  "include": [
+    "hardhat.config.ts",
+    "src",
+    "test",
+    "test-helpers",
+    "build/artifacts/**/*.d.ts"
+  ]
 }

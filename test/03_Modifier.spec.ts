@@ -1,31 +1,21 @@
-import { expect } from "chai";
-import {
-  type BigNumberish,
-  keccak256,
-  toUtf8Bytes,
-  AbiCoder,
-  ZeroAddress,
-  type Signer,
-  TypedDataEncoder,
-} from "ethers";
+import assert from "node:assert/strict";
+import { after, describe, it } from "node:test";
 
 import { network } from "hardhat";
+import { getAddress, hashStruct, keccak256, toHex, zeroAddress } from "viem";
 
-import typedDataForTransaction from "./typedDataForTransaction";
+import {
+  HARDHAT_CHAIN_ID,
+  salt as makeSalt,
+  signModuleTx,
+} from "../test-helpers/moduleTx";
 
-type ModuleTx = {
-  to: string;
-  value: BigNumberish;
-  data: string;
-  operation: number;
-};
-
-const AddressZero = ZeroAddress;
+const AddressZero = zeroAddress;
 const AddressOne = "0x0000000000000000000000000000000000000001";
 const SENTINEL_MODULES = AddressOne;
 
 const connection = await network.create();
-const { ethers, networkHelpers } = connection;
+const { viem, networkHelpers } = connection;
 const { loadFixture } = networkHelpers;
 
 describe("Modifier", () => {
@@ -34,1024 +24,701 @@ describe("Modifier", () => {
   });
 
   /**
-   * Sets up the test environment.
-   * Deploys the TestAvatar and TestModifier contracts, enables the modifier module, and prepares a transaction object for testing.
-   *
-   * @returns {Promise<{ iAvatar: any, modifier: any, tx: object, alice: any, bob: any, charlie: any }>} The deployed contract instances and a sample transaction object along with test signers.
+   * Deploys the TestAvatar and TestModifier contracts, enables the modifier
+   * on the avatar, and prepares a transaction for testing.
    */
   async function setupTests() {
-    const [signer, alice, bob, charlie] = await ethers.getSigners();
-    const Avatar = await ethers.getContractFactory("TestAvatar");
-    const avatar = await Avatar.connect(signer).deploy();
-    const iAvatar = (await ethers.getContractAt(
-      "TestAvatar",
-      await avatar.getAddress(),
-      signer
-    )) as any;
-    const Modifier = await ethers.getContractFactory("TestModifier");
-    const modifier = await Modifier.connect(signer).deploy(
-      await iAvatar.getAddress(),
-      await iAvatar.getAddress()
-    );
+    const [signer, alice, bob, charlie] = await viem.getWalletClients();
+    const iAvatar = await viem.deployContract("TestAvatar");
+    const modifier = await viem.deployContract("TestModifier", [
+      iAvatar.address,
+      iAvatar.address,
+    ]);
+    await iAvatar.write.enableModule([modifier.address]);
 
-    await iAvatar.enableModule(await modifier.getAddress());
     const tx = {
-      to: await avatar.getAddress(),
-      value: 0,
+      to: iAvatar.address,
+      value: 0n,
       data: "0x",
       operation: 0,
-      avatarTxGas: 0,
-      baseGas: 0,
-      gasPrice: 0,
-      gasToken: AddressZero,
-      refundReceiver: AddressZero,
-      signatures: "0x",
-    };
+    } as const;
     return {
       iAvatar,
-      modifier: (await ethers.getContractAt(
-        "TestModifier",
-        await modifier.getAddress(),
-        signer
-      )) as any,
+      modifier,
       tx,
+      signer,
       alice,
       bob,
       charlie,
     };
   }
 
-  describe("setupModules", async () => {
-    /**
-     * Tests the setup of modules.
-     * Verifies that calling setupModules more than once reverts with a custom error.
-     */
+  /** Checksummed address of a wallet client. */
+  function addressOf(wallet: { account: { address: `0x${string}` } }) {
+    return getAddress(wallet.account.address);
+  }
+
+  const salt = makeSalt("salt");
+
+  describe("setupModules", () => {
     it("reverts if called more than once", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(
-        modifier.attemptToSetupModules()
-      ).to.be.revertedWithCustomError(modifier, "SetupModulesAlreadyCalled");
+      await viem.assertions.revertWithCustomError(
+        modifier.write.attemptToSetupModules(),
+        modifier,
+        "SetupModulesAlreadyCalled"
+      );
     });
   });
-  describe("enableModule", async () => {
-    /**
-     * Tests enabling a module.
-     * Verifies that enabling a module reverts if the caller is not the owner.
-     */
+
+  describe("enableModule", () => {
     it("reverts if caller is not the owner", async () => {
-      const { modifier } = await loadFixture(setupTests);
-
-      const [, user2] = await ethers.getSigners();
-
-      await expect(modifier.connect(user2).enableModule(user2.address))
-        .to.be.revertedWithCustomError(modifier, "OwnableUnauthorizedAccount")
-        .withArgs(user2.address);
+      const { modifier, alice: user2 } = await loadFixture(setupTests);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.enableModule([user2.account.address], {
+          account: user2.account,
+        }),
+        modifier,
+        "OwnableUnauthorizedAccount",
+        [user2.account.address]
+      );
     });
-    /**
-     * Tests enabling a module.
-     * Verifies that enabling a module reverts if the module address is zero.
-     */
+
     it("reverts if module is zero address", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(modifier.enableModule(AddressZero))
-        .to.be.revertedWithCustomError(modifier, "InvalidModule")
-        .withArgs(AddressZero);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.enableModule([AddressZero]),
+        modifier,
+        "InvalidModule",
+        [AddressZero]
+      );
     });
-    /**
-     * Tests enabling a module.
-     * Verifies that enabling a module reverts if the module address is SENTINEL_MODULES.
-     */
+
     it("reverts if module is SENTINEL_MODULES", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(modifier.enableModule(SENTINEL_MODULES))
-        .to.be.revertedWithCustomError(modifier, "InvalidModule")
-        .withArgs(AddressOne);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.enableModule([SENTINEL_MODULES]),
+        modifier,
+        "InvalidModule",
+        [AddressOne]
+      );
     });
-    /**
-     * Tests enabling a module.
-     * Verifies that enabling a module reverts if the module is already enabled.
-     */
+
     it("reverts if module is already enabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-
-      const [user1] = await ethers.getSigners();
-
-      await expect(modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-      await expect(
-        modifier.enableModule(user1.address)
-      ).to.be.revertedWithCustomError(modifier, "AlreadyEnabledModule");
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "EnabledModule",
+        [user1.account.address]
+      );
+      await viem.assertions.revertWithCustomError(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "AlreadyEnabledModule"
+      );
     });
-    /**
-     * Tests enabling a module.
-     * Verifies that a module can be enabled successfully.
-     */
+
     it("enables a module", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "EnabledModule",
+        [user1.account.address]
+      );
     });
   });
 
-  describe("disableModule", async () => {
-    /**
-     * Tests disabling a module.
-     * Verifies that disabling a module reverts if the caller is not the owner.
-     */
+  describe("disableModule", () => {
     it("reverts if caller is not the owner", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [, user2] = await ethers.getSigners();
-      await expect(
-        modifier.connect(user2).disableModule(SENTINEL_MODULES, user2.address)
-      )
-        .to.be.revertedWithCustomError(modifier, "OwnableUnauthorizedAccount")
-        .withArgs(user2.address);
+      const { modifier, alice: user2 } = await loadFixture(setupTests);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.disableModule(
+          [SENTINEL_MODULES, user2.account.address],
+          { account: user2.account }
+        ),
+        modifier,
+        "OwnableUnauthorizedAccount",
+        [user2.account.address]
+      );
     });
-    /**
-     * Tests disabling a module.
-     * Verifies that disabling a module reverts if the module address is zero.
-     */
+
     it("reverts if module is zero address", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(modifier.disableModule(SENTINEL_MODULES, AddressZero))
-        .to.be.revertedWithCustomError(modifier, "InvalidModule")
-        .withArgs(AddressZero);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.disableModule([SENTINEL_MODULES, AddressZero]),
+        modifier,
+        "InvalidModule",
+        [AddressZero]
+      );
     });
-    /**
-     * Tests disabling a module.
-     * Verifies that disabling a module reverts if the module address is SENTINEL_MODULES.
-     */
+
     it("reverts if module is SENTINEL_MODULES", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(modifier.disableModule(SENTINEL_MODULES, SENTINEL_MODULES))
-        .to.be.revertedWithCustomError(modifier, "InvalidModule")
-        .withArgs(AddressOne);
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.write.disableModule([SENTINEL_MODULES, SENTINEL_MODULES]),
+        modifier,
+        "InvalidModule",
+        [AddressOne]
+      );
     });
-    /**
-     * Tests disabling a module.
-     * Verifies that disabling a module reverts if the module is already disabled.
-     */
+
     it("reverts if module is already disabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-      await expect(modifier.disableModule(SENTINEL_MODULES, user1.address))
-        .to.emit(modifier, "DisabledModule")
-        .withArgs(user1.address);
-      await expect(
-        modifier.disableModule(SENTINEL_MODULES, user1.address)
-      ).to.be.revertedWithCustomError(modifier, "AlreadyDisabledModule");
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "EnabledModule",
+        [user1.account.address]
+      );
+      await viem.assertions.emitWithArgs(
+        modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
+        modifier,
+        "DisabledModule",
+        [user1.account.address]
+      );
+      await viem.assertions.revertWithCustomError(
+        modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
+        modifier,
+        "AlreadyDisabledModule"
+      );
     });
-    /**
-     * Tests disabling a module.
-     * Verifies that a module can be disabled successfully.
-     */
+
     it("disables a module", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-      await expect(modifier.disableModule(SENTINEL_MODULES, user1.address))
-        .to.emit(modifier, "DisabledModule")
-        .withArgs(user1.address);
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "EnabledModule",
+        [user1.account.address]
+      );
+      await viem.assertions.emitWithArgs(
+        modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
+        modifier,
+        "DisabledModule",
+        [user1.account.address]
+      );
     });
   });
 
-  describe("isModuleEnabled", async () => {
-    /**
-     * Tests if a module is enabled.
-     * Verifies that it returns false if SENTINEL_MODULES is provided.
-     */
+  describe("isModuleEnabled", () => {
     it("returns false if SENTINEL_MODULES is provided", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(
-        await modifier.isModuleEnabled(SENTINEL_MODULES)
-      ).to.be.equals(false);
+      assert.equal(
+        await modifier.read.isModuleEnabled([SENTINEL_MODULES]),
+        false
+      );
     });
-    /**
-     * Tests if a module is enabled.
-     * Verifies that it returns false if AddressZero is provided.
-     */
+
     it("returns false if AddressZero is provided", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(await modifier.isModuleEnabled(AddressZero)).to.be.equals(
-        false
-      );
+      assert.equal(await modifier.read.isModuleEnabled([AddressZero]), false);
     });
 
-    /**
-     * Tests if a module is enabled.
-     * Verifies that it returns false if the module is not enabled.
-     */
     it("returns false if module is not enabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(await modifier.isModuleEnabled(user1.address)).to.be.equals(
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      assert.equal(
+        await modifier.read.isModuleEnabled([user1.account.address]),
         false
       );
     });
 
-    /**
-     * Tests if a module is enabled.
-     * Verifies that it returns true if the module is enabled.
-     */
     it("returns true if module is enabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [, user2] = await ethers.getSigners();
-
-      await expect(await modifier.enableModule(user2.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user2.address);
-      await expect(await modifier.isModuleEnabled(user2.address)).to.be.equals(
+      const { modifier, alice: user2 } = await loadFixture(setupTests);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user2.account.address]),
+        modifier,
+        "EnabledModule",
+        [user2.account.address]
+      );
+      assert.equal(
+        await modifier.read.isModuleEnabled([user2.account.address]),
         true
       );
     });
   });
 
-  describe("getModulesPaginated", async () => {
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that the page size must be greater than 0.
-     */
+  describe("getModulesPaginated", () => {
     it("requires page size to be greater than 0", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await expect(
-        modifier.getModulesPaginated(AddressOne, 0)
-      ).to.be.revertedWithCustomError(modifier, "InvalidPageSize");
-    });
-
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that the start must be a module or start pointer.
-     */
-    it("requires start to be a module or start pointer", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1, user2] = await ethers.getSigners();
-
-      await expect(modifier.getModulesPaginated(AddressZero, 1)).to.be.revert(
-        ethers
+      await viem.assertions.revertWithCustomError(
+        modifier.read.getModulesPaginated([AddressOne, 0n]),
+        modifier,
+        "InvalidPageSize"
       );
-      await modifier.enableModule(user1.address);
-
-      expect(
-        await modifier.getModulesPaginated(user1.address, 1)
-      ).to.be.deep.equal([[], AddressOne]);
-
-      await expect(
-        modifier.getModulesPaginated(user2.address, 1)
-      ).to.be.revertedWithCustomError(modifier, `InvalidModule`);
     });
 
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that an empty array is returned if no modules are enabled.
-     */
+    it("requires start to be a module or start pointer", async () => {
+      const {
+        modifier,
+        signer: user1,
+        alice: user2,
+      } = await loadFixture(setupTests);
+
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        modifier.read.getModulesPaginated([AddressZero, 1n]),
+        modifier,
+        "InvalidModule",
+        [AddressZero]
+      );
+      await modifier.write.enableModule([user1.account.address]);
+
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([user1.account.address, 1n]),
+        [[], AddressOne]
+      );
+
+      await viem.assertions.revertWithCustomError(
+        modifier.read.getModulesPaginated([user2.account.address, 1n]),
+        modifier,
+        "InvalidModule"
+      );
+    });
+
     it("returns empty array if no modules are enabled.", async () => {
       const { modifier } = await loadFixture(setupTests);
-
-      const result = await modifier.getModulesPaginated(SENTINEL_MODULES, 3);
-
-      expect(result).to.be.deep.equal([[], SENTINEL_MODULES]);
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([SENTINEL_MODULES, 3n]),
+        [[], SENTINEL_MODULES]
+      );
     });
 
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that one module is returned if one module is enabled.
-     */
     it("returns one module if one module is enabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await modifier.enableModule(user1.address);
-      const result = await modifier.getModulesPaginated(SENTINEL_MODULES, 3);
-
-      expect(result).to.be.deep.equal([[user1.address], SENTINEL_MODULES]);
+      const { modifier, signer: user1 } = await loadFixture(setupTests);
+      await modifier.write.enableModule([user1.account.address]);
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([SENTINEL_MODULES, 3n]),
+        [[addressOf(user1)], SENTINEL_MODULES]
+      );
     });
 
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that two modules are returned if two modules are enabled.
-     */
     it("returns two modules if two modules are enabled", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1, user2] = await ethers.getSigners();
+      const {
+        modifier,
+        signer: user1,
+        alice: user2,
+      } = await loadFixture(setupTests);
 
-      await expect(modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-      // delete once you figure out why you need to do this twice
-      await expect(modifier.enableModule(user2.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user2.address);
-      const result = await modifier.getModulesPaginated(SENTINEL_MODULES, 3);
-
-      expect(result).to.be.deep.equal([
-        [user2.address, user1.address],
-        SENTINEL_MODULES,
-      ]);
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user1.account.address]),
+        modifier,
+        "EnabledModule",
+        [user1.account.address]
+      );
+      await viem.assertions.emitWithArgs(
+        modifier.write.enableModule([user2.account.address]),
+        modifier,
+        "EnabledModule",
+        [user2.account.address]
+      );
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([SENTINEL_MODULES, 3n]),
+        [[addressOf(user2), addressOf(user1)], SENTINEL_MODULES]
+      );
     });
 
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that all modules are returned over multiple pages.
-     */
     it("returns all modules over multiple pages", async () => {
-      const { modifier } = await loadFixture(setupTests);
-      const [user1, user2, user3] = await ethers.getSigners();
+      const {
+        modifier,
+        signer: user1,
+        alice: user2,
+        bob: user3,
+      } = await loadFixture(setupTests);
 
-      await modifier.enableModule(user1.address);
-      await modifier.enableModule(user2.address);
-      await modifier.enableModule(user3.address);
+      await modifier.write.enableModule([user1.account.address]);
+      await modifier.write.enableModule([user2.account.address]);
+      await modifier.write.enableModule([user3.account.address]);
 
-      await expect(await modifier.isModuleEnabled(user1.address)).to.be.true;
-      await expect(await modifier.isModuleEnabled(user2.address)).to.be.true;
-      await expect(await modifier.isModuleEnabled(user3.address)).to.be.true;
+      assert.equal(
+        await modifier.read.isModuleEnabled([user1.account.address]),
+        true
+      );
+      assert.equal(
+        await modifier.read.isModuleEnabled([user2.account.address]),
+        true
+      );
+      assert.equal(
+        await modifier.read.isModuleEnabled([user3.account.address]),
+        true
+      );
 
       // page size 2
-      await expect(
-        await modifier.getModulesPaginated(AddressOne, 2)
-      ).to.be.deep.equal([[user3.address, user2.address], user2.address]);
-
-      await expect(
-        await modifier.getModulesPaginated(user2.address, 2)
-      ).to.be.deep.equal([[user1.address], AddressOne]);
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([AddressOne, 2n]),
+        [[addressOf(user3), addressOf(user2)], addressOf(user2)]
+      );
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([user2.account.address, 2n]),
+        [[addressOf(user1)], AddressOne]
+      );
 
       // page size 1
-      await expect(
-        await modifier.getModulesPaginated(AddressOne, 1)
-      ).to.be.deep.equal([[user3.address], user3.address]);
-      await expect(
-        await modifier.getModulesPaginated(user3.address, 1)
-      ).to.be.deep.equal([[user2.address], user2.address]);
-      await expect(
-        await modifier.getModulesPaginated(user2.address, 1)
-      ).to.be.deep.equal([[user1.address], AddressOne]);
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([AddressOne, 1n]),
+        [[addressOf(user3)], addressOf(user3)]
+      );
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([user3.account.address, 1n]),
+        [[addressOf(user2)], addressOf(user2)]
+      );
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([user2.account.address, 1n]),
+        [[addressOf(user1)], AddressOne]
+      );
     });
 
-    /**
-     * Tests retrieving enabled modules in a paginated manner.
-     * Verifies that an empty array and end pointer are returned for a safe with no modules.
-     */
     it("returns an empty array and end pointer for a safe with no modules", async () => {
       const { modifier } = await loadFixture(setupTests);
-      expect(
-        await modifier.getModulesPaginated(AddressOne, 10)
-      ).to.be.deep.equal([[], AddressOne]);
+      assert.deepEqual(
+        await modifier.read.getModulesPaginated([AddressOne, 10n]),
+        [[], AddressOne]
+      );
     });
   });
 
-  describe("execTransactionFromModule", async () => {
-    /**
-     * Tests executing a transaction from a module.
-     * Verifies that execution reverts if the module is not enabled.
-     */
-    it("reverts if module is not enabled", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      await expect(
-        modifier.execTransactionFromModule(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation
-        )
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
+  for (const [name, signedName, event] of [
+    [
+      "execTransactionFromModule",
+      "execTransactionFromModuleSigned",
+      "Executed",
+    ],
+    [
+      "execTransactionFromModuleReturnData",
+      "execTransactionFromModuleReturnDataSigned",
+      "ExecutedAndReturnedData",
+    ],
+  ] as const) {
+    describe(name, () => {
+      it("reverts if module is not enabled", async () => {
+        const { modifier, tx, signer } = await loadFixture(setupTests);
+        await viem.assertions.revertWithCustomErrorWithArgs(
+          modifier.write[name]([tx.to, tx.value, tx.data, tx.operation]),
+          modifier,
+          "NotAuthorized",
+          [signer.account.address]
+        );
+      });
+
+      it("execute a transaction.", async () => {
+        const { modifier, tx, signer: user1 } = await loadFixture(setupTests);
+        await viem.assertions.emitWithArgs(
+          modifier.write.enableModule([user1.account.address]),
+          modifier,
+          "EnabledModule",
+          [user1.account.address]
+        );
+
+        await viem.assertions.emit(
+          modifier.write[name]([tx.to, tx.value, tx.data, tx.operation], {
+            account: user1.account,
+          }),
+          modifier,
+          event
+        );
+      });
+
+      it("execute a transaction with signature.", async () => {
+        const {
+          modifier,
+          tx,
+          signer: user1,
+          alice: relayer,
+        } = await loadFixture(setupTests);
+        await viem.assertions.emitWithArgs(
+          modifier.write.enableModule([user1.account.address]),
+          modifier,
+          "EnabledModule",
+          [user1.account.address]
+        );
+
+        const signature = await signModuleTx(user1, modifier.address, tx, salt);
+
+        await viem.assertions.revertWithCustomError(
+          modifier.write[signedName]([tx, salt, "0x"], {
+            account: relayer.account,
+          }),
+          modifier,
+          "NotAuthorized"
+        );
+
+        await viem.assertions.emit(
+          modifier.write[signedName]([tx, salt, signature], {
+            account: relayer.account,
+          }),
+          modifier,
+          event
+        );
+      });
+
+      it("reverts if signature not valid.", async () => {
+        const {
+          modifier,
+          tx,
+          signer: user1,
+          alice: user2,
+          bob: relayer,
+        } = await loadFixture(setupTests);
+        await viem.assertions.emitWithArgs(
+          modifier.write.enableModule([user1.account.address]),
+          modifier,
+          "EnabledModule",
+          [user1.account.address]
+        );
+
+        const signatureOk = await signModuleTx(
+          user1,
+          modifier.address,
+          tx,
+          salt
+        );
+        const signatureBad = await signModuleTx(
+          user2,
+          modifier.address,
+          tx,
+          salt
+        );
+
+        await viem.assertions.revertWithCustomError(
+          modifier.write[signedName]([tx, salt, signatureBad], {
+            account: relayer.account,
+          }),
+          modifier,
+          "NotAuthorized"
+        );
+
+        await viem.assertions.emit(
+          modifier.write[signedName]([tx, salt, signatureOk], {
+            account: relayer.account,
+          }),
+          modifier,
+          event
+        );
+      });
+
+      it("reverts if signature previously used for execution.", async () => {
+        const {
+          modifier,
+          tx,
+          signer: user1,
+          alice: user2,
+          bob: relayer,
+        } = await loadFixture(setupTests);
+        await viem.assertions.emitWithArgs(
+          modifier.write.enableModule([user1.account.address]),
+          modifier,
+          "EnabledModule",
+          [user1.account.address]
+        );
+
+        const signatureOk = await signModuleTx(
+          user1,
+          modifier.address,
+          tx,
+          salt
+        );
+        const signatureBad = await signModuleTx(
+          user2,
+          modifier.address,
+          tx,
+          salt
+        );
+
+        await viem.assertions.revertWithCustomError(
+          modifier.write[signedName]([tx, salt, signatureBad], {
+            account: relayer.account,
+          }),
+          modifier,
+          "NotAuthorized"
+        );
+
+        await viem.assertions.emit(
+          modifier.write[signedName]([tx, salt, signatureOk], {
+            account: relayer.account,
+          }),
+          modifier,
+          event
+        );
+
+        await viem.assertions.revertWithCustomError(
+          modifier.write[signedName]([tx, salt, signatureOk], {
+            account: relayer.account,
+          }),
+          modifier,
+          "HashAlreadyConsumed"
+        );
+      });
+
+      it("reverts if signature invalidated.", async () => {
+        const {
+          modifier,
+          tx,
+          signer: user1,
+          alice: relayer,
+        } = await loadFixture(setupTests);
+
+        await modifier.write.enableModule([user1.account.address]);
+
+        const signatureOk = await signModuleTx(
+          user1,
+          modifier.address,
+          tx,
+          salt
+        );
+
+        const hash = await modifier.read.moduleTxHash([tx, salt]);
+        await modifier.write.invalidate([hash]);
+
+        await viem.assertions.revertWithCustomError(
+          modifier.write[signedName]([tx, salt, signatureOk], {
+            account: relayer.account,
+          }),
+          modifier,
+          "HashAlreadyConsumed"
+        );
+      });
     });
-    /**
-     * Tests executing a transaction from a module.
-     * Verifies that a transaction can be executed successfully.
-     */
-    it("execute a transaction.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
+  }
 
-      await expect(
-        modifier
-          .connect(user1)
-          .execTransactionFromModule(tx.to, tx.value, tx.data, tx.operation)
-      ).to.emit(modifier, "Executed");
-    });
-    /**
-     * Tests executing a transaction from a module with a signature.
-     * Verifies that a transaction can be executed successfully with a valid signature.
-     */
-    it("execute a transaction with signature.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
+  describe("sentOrSignedByModule", () => {
+    const salty = makeSalt("something salty");
 
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signature = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-
-      const transactionWithSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signature
-        );
-
-      await expect(
-        relayer.sendTransaction(transaction)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithSig)).to.emit(
-        modifier,
-        "Executed"
-      );
-    });
-    /**
-     * Tests executing a transaction from a module with an invalid signature.
-     * Verifies that execution reverts if the signature is not valid.
-     */
-    it("reverts if signature not valid.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, user2, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-      const signatureBad = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user2
-      );
-
-      const transactionWithBadSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signatureBad
-        );
-
-      const transactionWithOkSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      await expect(
-        relayer.sendTransaction(transactionWithBadSig)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithOkSig)).to.emit(
-        modifier,
-        "Executed"
-      );
-    });
-    /**
-     * Tests executing a transaction from a module with a reused signature.
-     * Verifies that execution reverts if the signature was previously used for execution.
-     */
-    it("reverts if signature previously used for execution.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, user2, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-      const signatureBad = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user2
-      );
-
-      const transactionWithBadSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signatureBad
-        );
-
-      const transactionWithOkSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      await expect(
-        relayer.sendTransaction(transactionWithBadSig)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithOkSig)).to.emit(
-        modifier,
-        "Executed"
-      );
-
-      await expect(
-        relayer.sendTransaction(transactionWithOkSig)
-      ).to.be.revertedWithCustomError(modifier, "HashAlreadyConsumed");
-    });
-    /**
-     * Tests executing a transaction from a module with an invalidated signature.
-     * Verifies that execution reverts if the signature was invalidated.
-     */
-    it("reverts if signature invalidated.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, relayer] = await ethers.getSigners();
-
-      await modifier.enableModule(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-
-      const transactionWithSig =
-        await modifier.execTransactionFromModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      const hash = await modifier.moduleTxHash(tx, salt);
-
-      await modifier.invalidate(hash);
-
-      await expect(
-        relayer.sendTransaction(transactionWithSig)
-      ).to.be.revertedWithCustomError(modifier, "HashAlreadyConsumed");
-    });
-  });
-
-  describe("execTransactionFromModuleReturnData", async () => {
-    /**
-     * Tests executing a transaction from a module and returning data.
-     * Verifies that execution reverts if the module is not enabled.
-     */
-    it("reverts if module is not enabled", async () => {
-      const [signer] = await ethers.getSigners();
-      const { modifier, tx } = await loadFixture(setupTests);
-      await expect(
-        modifier
-          .connect(signer)
-          .execTransactionFromModuleReturnData(
-            tx.to,
-            tx.value,
-            tx.data,
-            tx.operation
-          )
-      )
-        .to.be.revertedWithCustomError(modifier, "NotAuthorized")
-        .withArgs(signer.address);
-    });
-    /**
-     * Tests executing a transaction from a module and returning data.
-     * Verifies that a transaction can be executed successfully and data can be returned.
-     */
-    it("execute a transaction.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      await expect(
-        modifier.execTransactionFromModuleReturnData(
-          tx.to,
-          tx.value,
-          tx.data,
-          tx.operation
-        )
-      ).to.emit(modifier, "ExecutedAndReturnedData");
-    });
-    /**
-     * Tests executing a transaction from a module with a signature and returning data.
-     * Verifies that a transaction can be executed successfully with a valid signature and data can be returned.
-     */
-    it("execute a transaction with signature.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signature = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-
-      const transactionWithSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signature
-        );
-
-      await expect(
-        relayer.sendTransaction(transaction)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithSig)).to.emit(
-        modifier,
-        "ExecutedAndReturnedData"
-      );
-    });
-    /**
-     * Tests executing a transaction from a module with an invalid signature and returning data.
-     * Verifies that execution reverts if the signature is not valid.
-     */
-    it("reverts if signature not valid.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, user2, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureBad = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user2
-      );
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-
-      const transactionWithBadSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signatureBad
-        );
-
-      const transactionWithOkSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      await expect(
-        relayer.sendTransaction(transactionWithBadSig)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithOkSig)).to.emit(
-        modifier,
-        "ExecutedAndReturnedData"
-      );
-    });
-    /**
-     * Tests executing a transaction from a module with a reused signature and returning data.
-     * Verifies that execution reverts if the signature was previously used for execution.
-     */
-    it("reverts if signature previously used for execution.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, user2, relayer] = await ethers.getSigners();
-      await expect(await modifier.enableModule(user1.address))
-        .to.emit(modifier, "EnabledModule")
-        .withArgs(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-      const signatureBad = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user2
-      );
-
-      const transactionWithBadSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signatureBad
-        );
-
-      const transactionWithOkSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      await expect(
-        relayer.sendTransaction(transactionWithBadSig)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      await expect(relayer.sendTransaction(transactionWithOkSig)).to.emit(
-        modifier,
-        "ExecutedAndReturnedData"
-      );
-
-      await expect(
-        relayer.sendTransaction(transactionWithOkSig)
-      ).to.be.revertedWithCustomError(modifier, "HashAlreadyConsumed");
-    });
-    /**
-     * Tests executing a transaction from a module with an invalidated signature and returning data.
-     * Verifies that execution reverts if the signature was invalidated.
-     */
-    it("reverts if signature invalidated.", async () => {
-      const { modifier, tx } = await loadFixture(setupTests);
-      const [user1, relayer] = await ethers.getSigners();
-
-      await modifier.enableModule(user1.address);
-
-      const salt = keccak256(toUtf8Bytes("salt"));
-      const { from, ...transaction } =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          emptySignature()
-        );
-
-      const signatureOk = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        user1
-      );
-
-      const transactionWithSig =
-        await modifier.execTransactionFromModuleReturnDataSigned.populateTransaction(
-          tx,
-          salt,
-          signatureOk
-        );
-
-      const hash = await modifier.moduleTxHash(tx, salt);
-
-      await modifier.invalidate(hash);
-
-      await expect(
-        relayer.sendTransaction(transactionWithSig)
-      ).to.be.revertedWithCustomError(modifier, "HashAlreadyConsumed");
-    });
-  });
-
-  describe("sentOrSignedByModule", async () => {
-    /**
-     * Tests checking if a transaction was sent or signed by a module.
-     * Verifies that it returns the sender if the sender is a module.
-     */
     it("returns msg.sender if msg.sender is module", async () => {
       const { modifier, alice, bob } = await loadFixture(setupTests);
 
-      await modifier.enableModule(alice.address);
-      expect(
-        await modifier
-          .connect(alice)
-          .exposeSentOrSignedByModuleDirect.staticCall()
-      ).to.equal(alice.address);
+      await modifier.write.enableModule([alice.account.address]);
+      const { result } =
+        await modifier.simulate.exposeSentOrSignedByModuleDirect({
+          account: alice.account.address,
+        });
+      assert.equal(result, addressOf(alice));
 
-      expect(await modifier.connect(bob).exposeSentOrSignedByModule()).to.equal(
+      assert.equal(
+        await modifier.read.exposeSentOrSignedByModule({
+          account: bob.account,
+        }),
         AddressZero
       );
     });
 
-    /**
-     * Tests checking if a transaction was sent or signed by a module.
-     * Verifies that direct and signed authentication set the current module.
-     */
     it("returns authenticated module for direct and signed calls", async () => {
       const { modifier, tx, alice, bob, charlie } =
         await loadFixture(setupTests);
 
-      await modifier.enableModule(alice.address);
-      await modifier.enableModule(bob.address);
+      await modifier.write.enableModule([alice.account.address]);
+      await modifier.write.enableModule([bob.account.address]);
 
-      const salt = keccak256(toUtf8Bytes("something salty"));
-      const signature = await sign(await modifier.getAddress(), tx, salt, bob);
-      const transactionWithSig =
-        await modifier.exposeSentOrSignedByModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signature
-        );
+      const signature = await signModuleTx(bob, modifier.address, tx, salty);
 
-      expect(
-        await modifier
-          .connect(alice)
-          .exposeSentOrSignedByModuleDirect.staticCall()
-      ).to.equal(alice.address);
+      const direct = await modifier.simulate.exposeSentOrSignedByModuleDirect({
+        account: alice.account.address,
+      });
+      assert.equal(direct.result, addressOf(alice));
 
-      expect(await charlie.call(transactionWithSig)).to.equal(
-        AbiCoder.defaultAbiCoder().encode(["address"], [bob.address])
+      const signed = await modifier.simulate.exposeSentOrSignedByModuleSigned(
+        [tx, salty, signature],
+        { account: charlie.account.address }
       );
+      assert.equal(signed.result, addressOf(bob));
     });
 
-    /**
-     * Tests checking if a transaction was sent or signed by a module.
-     * Verifies that it returns the signer if the signer is a module.
-     */
     it("returns signer if signer is module", async () => {
-      const { modifier, tx, alice } = await loadFixture(setupTests);
-      const [, , , relayer] = await ethers.getSigners();
-
-      await modifier.enableModule(alice.address);
-
-      const salt = keccak256(toUtf8Bytes("something salty"));
-      const signature = await sign(
-        await modifier.getAddress(),
+      const {
+        modifier,
         tx,
-        salt,
-        alice
-      );
-      const transactionWithSig =
-        await modifier.exposeSentOrSignedByModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signature
-        );
+        alice,
+        charlie: relayer,
+      } = await loadFixture(setupTests);
 
-      expect(await relayer.call(transactionWithSig)).to.equal(
-        AbiCoder.defaultAbiCoder().encode(["address"], [alice.address])
-      );
+      await modifier.write.enableModule([alice.account.address]);
+
+      const signature = await signModuleTx(alice, modifier.address, tx, salty);
+
+      const { result } =
+        await modifier.simulate.exposeSentOrSignedByModuleSigned(
+          [tx, salty, signature],
+          { account: relayer.account.address }
+        );
+      assert.equal(result, addressOf(alice));
     });
 
     it("authenticates a modifier-defined EIP-712 digest", async () => {
-      const { modifier, alice } = await loadFixture(setupTests);
-      const [, , , relayer] = await ethers.getSigners();
+      const {
+        modifier,
+        alice,
+        charlie: relayer,
+      } = await loadFixture(setupTests);
 
-      await modifier.enableModule(alice.address);
+      await modifier.write.enableModule([alice.account.address]);
 
       const domain = {
-        chainId: 31337,
-        verifyingContract: await modifier.getAddress(),
+        chainId: HARDHAT_CHAIN_ID,
+        verifyingContract: modifier.address,
       };
       const types = {
         ScopedTx: [{ name: "scope", type: "bytes32" }],
-      };
-      const message = { scope: keccak256(toUtf8Bytes("scope")) };
-      const structHash = TypedDataEncoder.hashStruct(
-        "ScopedTx",
+      } as const;
+      const message = { scope: keccak256(toHex("scope")) };
+      const structHash = hashStruct({
+        data: message,
+        primaryType: "ScopedTx",
         types,
-        message
+      });
+      const signature = await alice.signTypedData({
+        account: alice.account,
+        domain,
+        types,
+        primaryType: "ScopedTx",
+        message,
+      });
+
+      const { result } =
+        await modifier.simulate.exposeSentOrSignedByModuleSignedStructHash(
+          [structHash, signature],
+          { account: relayer.account.address }
+        );
+      assert.equal(result, addressOf(alice));
+
+      await modifier.write.exposeSentOrSignedByModuleSignedStructHash(
+        [structHash, signature],
+        { account: relayer.account }
       );
-      const signature = await alice.signTypedData(domain, types, message);
 
-      expect(
-        await modifier
-          .connect(relayer)
-          .exposeSentOrSignedByModuleSignedStructHash.staticCall(
-            structHash,
-            signature
-          )
-      ).to.equal(alice.address);
-
-      await modifier
-        .connect(relayer)
-        .exposeSentOrSignedByModuleSignedStructHash(structHash, signature);
-
-      await expect(
-        modifier
-          .connect(relayer)
-          .exposeSentOrSignedByModuleSignedStructHash(structHash, signature)
-      ).to.be.revertedWithCustomError(modifier, "HashAlreadyConsumed");
+      await viem.assertions.revertWithCustomError(
+        modifier.write.exposeSentOrSignedByModuleSignedStructHash(
+          [structHash, signature],
+          { account: relayer.account }
+        ),
+        modifier,
+        "HashAlreadyConsumed"
+      );
     });
 
-    /**
-     * Tests checking if a transaction was sent or signed by a module.
-     * Verifies that it returns zero if the signer is not a module and the sender is not a module.
-     */
     it("returns zero if signer is not module and message sender not a module", async () => {
-      const { modifier, tx, alice } = await loadFixture(setupTests);
-      const [, , , relayer] = await ethers.getSigners();
+      const {
+        modifier,
+        tx,
+        alice,
+        charlie: relayer,
+      } = await loadFixture(setupTests);
 
       // no modules enabled
 
-      const salt = keccak256(toUtf8Bytes("something salty"));
-      const signature = await sign(
-        await modifier.getAddress(),
-        tx,
-        salt,
-        alice
+      const signature = await signModuleTx(alice, modifier.address, tx, salty);
+
+      await viem.assertions.revertWithCustomError(
+        modifier.write.exposeSentOrSignedByModuleSigned(
+          [tx, salty, signature],
+          { account: relayer.account }
+        ),
+        modifier,
+        "NotAuthorized"
       );
-      const transactionWithSig =
-        await modifier.exposeSentOrSignedByModuleSigned.populateTransaction(
-          tx,
-          salt,
-          signature
-        );
 
-      await expect(
-        relayer.sendTransaction(transactionWithSig)
-      ).to.be.revertedWithCustomError(modifier, "NotAuthorized");
-
-      expect(await modifier.exposeSentOrSignedByModule()).to.equal(AddressZero);
+      assert.equal(
+        await modifier.read.exposeSentOrSignedByModule(),
+        AddressZero
+      );
     });
   });
 });
-
-/**
- *	Signs a transaction.
- *
- *	@param {string} contract - The contract address.
- *	@param {TransactionLike} transaction - The transaction object.
- *	@param {string} salt - The salt value.
- *	@param {Signer} signer - The signer object.
- *	@returns {Promise} The signed transaction.
- */
-async function sign(
-  contract: string,
-  tx: ModuleTx,
-  salt: string,
-  signer: Signer
-) {
-  const { domain, types, message } = typedDataForTransaction(
-    { contract, chainId: 31337 },
-    { ...tx, salt }
-  );
-
-  return signer.signTypedData(domain, types, message);
-}
-
-function emptySignature() {
-  return "0x";
-}

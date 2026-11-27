@@ -1,27 +1,25 @@
 import {
-  AbiCoder,
-  BigNumberish,
   concat,
-  getCreate2Address,
-  Interface,
+  encodeAbiParameters,
+  getContractAddress,
+  isAddress,
   keccak256,
-} from "ethers";
+  type Address,
+  type Hex,
+} from "viem";
 
+import { encodeSetUp } from "./encodeArgs.js";
 import { address as factoryAddress } from "../factory/proxyFactory.js";
 
+import type { AbiArgs } from "../types.js";
+
 /**
- * Predicts the address of a proxy contract deployed via ModuleProxyFactory.
- * @param {Object} params - The function parameters.
- * @param {string} [params.factory=factoryAddress] - The address of the factory contract.
- * If not provided, the default ModuleProxyFactory address will be used. Note: To predict the address
- * of a proxy contract, you don't need to explicitly pass the factory address. If you leave it blank,
- * the default `proxyFactoryAddress` will be used.
- * @param {string} params.mastercopy - The address of the mastercopy contract.
- * @param {Object} params.setupArgs - The arguments for the setup function.
- * @param {any[]} params.setupArgs.types - The types of the setup arguments.
- * @param {any[]} params.setupArgs.values - The values of the setup arguments.
- * @param {BigNumberish} params.saltNonce - The saltNonce used to internally derive the final create2 salt.
- * @returns {string} The predicted address of the proxy contract.
+ * Predicts the address of a Mod instance deployed via ModuleProxyFactory.
+ *
+ * @param params.factory - The ModuleProxyFactory to deploy through. Defaults to the canonical one.
+ * @param params.mastercopy - The address of the mastercopy contract.
+ * @param params.setupArgs - The Mod setup args, ABI-encoded into the `setUp` call.
+ * @param params.saltNonce - The salt nonce used to derive the final CREATE2 salt.
  */
 export default function predictProxyAddress({
   factory = factoryAddress,
@@ -29,57 +27,35 @@ export default function predictProxyAddress({
   setupArgs,
   saltNonce,
 }: {
-  factory?: string;
-  mastercopy: string;
-  setupArgs: { types: any[]; values: any[] };
-  saltNonce: BigNumberish;
-}): string {
+  factory?: Address;
+  mastercopy: Address;
+  setupArgs: AbiArgs;
+  saltNonce: bigint | number | string;
+}): Address {
   const salt = keccak256(
     concat([
-      keccak256(initializer({ setupArgs })),
-      AbiCoder.defaultAbiCoder().encode(["uint256"], [saltNonce]),
+      keccak256(encodeSetUp(setupArgs)),
+      encodeAbiParameters([{ type: "uint256" }], [BigInt(saltNonce)]),
     ])
   );
-  return getCreate2Address(
-    factory,
+  return getContractAddress({
+    opcode: "CREATE2",
+    from: factory,
     salt,
-    keccak256(creationBytecode({ mastercopy }))
-  );
+    bytecodeHash: keccak256(creationBytecode(mastercopy)),
+  });
 }
 
 /**
- * Generates the creation bytecode for the proxy contract.
- *
- * @param {Object} params - The function parameters.
- * @param {string} params.mastercopy - The address of the mastercopy contract.
- * @returns {string} The creation bytecode for the proxy contract.
+ * Generates the EIP-1167 minimal proxy creation bytecode for `mastercopy`.
  */
-function creationBytecode({ mastercopy }: { mastercopy: string }): string {
-  const left = "0x602d8060093d393df3363d3d373d3d3d363d73";
-  const right = "5af43d82803e903d91602b57fd5bf3";
-  const center = mastercopy.toLowerCase().replace(/^0x/, "");
-  return `${left}${center}${right}`;
-}
-
-/**
- * Encodes the initializer data for the setup function.
- *
- * @param {Object} params - The function parameters.
- * @param {Object} params.setupArgs - The arguments for the setup function.
- * @param {any[]} params.setupArgs.types - The types of the setup arguments.
- * @param {any[]} params.setupArgs.values - The values of the setup arguments.
- * @returns {string} The encoded initializer data.
- */
-function initializer({
-  setupArgs,
-}: {
-  setupArgs: { types: any[]; values: any[] };
-}): string {
-  const proxyInterface = new Interface([
-    "function setUp(bytes memory initializeParams)",
-  ]);
-
-  return proxyInterface.encodeFunctionData("setUp", [
-    AbiCoder.defaultAbiCoder().encode(setupArgs.types, setupArgs.values),
+function creationBytecode(mastercopy: Address): Hex {
+  if (!isAddress(mastercopy)) {
+    throw new Error(`Mastercopy address "${mastercopy}" is invalid`);
+  }
+  return concat([
+    "0x602d8060093d393df3363d3d373d3d3d363d73",
+    mastercopy,
+    "0x5af43d82803e903d91602b57fd5bf3",
   ]);
 }

@@ -43,11 +43,12 @@
     "build": "hardhat compile && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json",
     "postbuild": "node postbuild.mjs",
     "clean": "rm -rf dist build",
-    "test": "hardhat test",
-    "coverage": "hardhat --coverage test",
+    "test": "hardhat test nodejs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "coverage": "hardhat --coverage test nodejs",
     "format": "yarn format:sol && yarn format:ts",
     "format:sol": "prettier --write --plugin=prettier-plugin-solidity ./contracts/**/*.sol",
-    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./*.ts",
+    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./test-helpers/**/*.ts ./*.ts",
     "prepare": "yarn clean && yarn build",
     "prerelease": "yarn clean && yarn build"
   },
@@ -59,27 +60,18 @@
     "url": "git+https://github.com/zodiaceco/zodiac-core.git"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-ethers": "4.0.10",
-    "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.7",
-    "@nomicfoundation/hardhat-ignition": "3.1.4",
-    "@nomicfoundation/hardhat-ignition-ethers": "3.1.4",
-    "@nomicfoundation/hardhat-keystore": "3.0.8",
-    "@nomicfoundation/hardhat-mocha": "3.0.18",
-    "@nomicfoundation/hardhat-network-helpers": "3.0.7",
-    "@nomicfoundation/hardhat-verify": "3.0.16",
-    "@nomicfoundation/ignition-core": "3.1.4",
-    "@types/chai": "5.2.3",
-    "@types/mocha": "10.0.10",
-    "@types/node": "24.13.3",
-    "chai": "6.2.2",
-    "hardhat": "3.4.4",
-    "mocha": "11.7.5",
-    "prettier": "3.8.3",
-    "prettier-plugin-solidity": "2.3.1",
-    "typescript": "6.0.3"
+    "@nomicfoundation/hardhat-network-helpers": "3.0.12",
+    "@nomicfoundation/hardhat-node-test-runner": "3.1.3",
+    "@nomicfoundation/hardhat-viem": "3.1.0",
+    "@nomicfoundation/hardhat-viem-assertions": "3.1.5",
+    "@types/node": "24.19.4",
+    "hardhat": "3.23.0",
+    "prettier": "3.10.1",
+    "prettier-plugin-solidity": "2.5.0",
+    "typescript": "7.0.2"
   },
   "dependencies": {
-    "ethers": "6.16.0"
+    "viem": "^2.58.8"
   },
   "packageManager": "yarn@1.22.19+sha512.ff4579ab459bb25aa7c0ff75b62acebe576f6084b36aa842971cf250a5d8c6cd3bc9420b22ce63c7f93a0857bc6ef29291db39c3e7a23aab5adfd5a4dd6c5d71"
 }

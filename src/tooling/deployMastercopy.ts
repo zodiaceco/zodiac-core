@@ -1,3 +1,5 @@
+import { numberToHex, type Address, type Hex } from "viem";
+
 import { address as erc2470FactoryAddress } from "../factory/erc2470Factory.js";
 
 import encodeDeploySingleton from "../encoding/encodeDeploySingleton.js";
@@ -10,19 +12,15 @@ import waitForTransaction from "./waitForTransaction.js";
 import { Create2Args, EIP1193Provider } from "../types.js";
 
 /**
- * Deploys a Mastercopy via a SingletonFactory
+ * Deploys a mastercopy via a singleton factory. Returns `noop: true` if
+ * bytecode already exists at the predicted address.
  *
- * @param {Object} params - The function parameters.
- * @param {string} [params.factory=erc2470FactoryAddress] - The address of the factory to use.
- * @param {string} params.bytecode - The bytecode of the contract to deploy.
- * @param {Object} params.constructorArgs - The constructor arguments for the contract.
- * @param {any[]} params.constructorArgs.types - The types of the constructor arguments.
- * @param {any[]} params.constructorArgs.values - The values of the constructor arguments.
- * @param {string | number | bigint} params.salt - The salt value used for CREATE2 deployment.
- * @param {EIP1193Provider} params.provider - The EIP1193 compliant provider to interact with the blockchain.
- * @param {function} [params.onStart] - Optional callback function to call when the deployment starts.
- *
- * @returns {Promise<{ address: string; noop: boolean }>} The address of the deployed mastercopy contract and a noop flag indicating if the deployment was a no-operation.
+ * @param params.factory - The singleton factory. Defaults to ERC-2470.
+ * @param params.bytecode - The creation bytecode of the contract to deploy.
+ * @param params.constructorArgs - The constructor arguments, appended to the bytecode.
+ * @param params.salt - The bytes32 CREATE2 salt.
+ * @param params.provider - EIP-1193 provider to send the deployment transaction.
+ * @param params.onStart - Optional callback invoked right before submitting the deployment.
  */
 export default async function deployMastercopy({
   factory = erc2470FactoryAddress,
@@ -32,11 +30,11 @@ export default async function deployMastercopy({
   provider,
   onStart,
 }: Create2Args & {
-  factory?: string;
+  factory?: Address;
   provider: EIP1193Provider;
   onStart?: () => void;
 }): Promise<{
-  address: string;
+  address: Address;
   noop: boolean;
 }> {
   const address = predictSingletonAddress({
@@ -71,7 +69,6 @@ export default async function deployMastercopy({
       method: "eth_estimateGas",
       params: [{ data: creationBytecode({ bytecode, constructorArgs }) }],
     }),
-    0,
   ]);
 
   const transaction = {
@@ -81,13 +78,15 @@ export default async function deployMastercopy({
       constructorArgs,
       salt,
     }),
-    gasLimit: Number(gasEstimation) + Number(innerGasEstimation),
+    gas: numberToHex(
+      BigInt(gasEstimation as string) + BigInt(innerGasEstimation as string)
+    ),
   };
 
   const hash = (await provider.request({
     method: "eth_sendTransaction",
     params: [transaction],
-  })) as string;
+  })) as Hex;
 
   await waitForTransaction(hash, provider);
 

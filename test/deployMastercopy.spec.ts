@@ -1,21 +1,22 @@
-import { expect } from "chai";
+import assert from "node:assert/strict";
+import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { artifacts, network } from "hardhat";
 
 import predictSingletonAddress from "../src/encoding/predictSingletonAddress";
 
 import { deployFactories, deployMastercopy } from "../src/tooling";
-import createEIP1193 from "./createEIP1193";
+import withSender from "../test-helpers/eip1193";
 
 const connection = await network.create();
-const { ethers, networkHelpers, provider: hardhatProvider } = connection;
+const { viem, networkHelpers, provider: hardhatProvider } = connection;
 const { loadFixture } = networkHelpers;
 
 async function setup() {
-  const [signer] = await ethers.getSigners();
-  await deployFactories({
-    provider: createEIP1193(hardhatProvider, signer),
-  });
+  const [wallet] = await viem.getWalletClients();
+  const provider = withSender(hardhatProvider, wallet.account.address);
+  await deployFactories({ provider });
+  return { provider };
 }
 
 const avatar = "0x0000000000000000000000000000000000000123";
@@ -27,13 +28,10 @@ describe("deployMastercopy", () => {
   });
 
   it("Deploys a mastercopy, at the predicted address", async () => {
-    await loadFixture(setup);
+    const { provider } = await loadFixture(setup);
+    const publicClient = await viem.getPublicClient();
 
-    const { provider } = ethers;
-    const [signer] = await ethers.getSigners();
-
-    const TestModule = await ethers.getContractFactory("TestModule");
-    const bytecode = TestModule.bytecode;
+    const { bytecode } = await artifacts.readArtifact("TestModule");
     const salt =
       "0x0000000000000000000000000000000000000000000000000000000000000001";
     const constructorArgs = {
@@ -47,21 +45,23 @@ describe("deployMastercopy", () => {
       constructorArgs,
     });
 
-    expect(await provider.getCode(address)).to.equal("0x");
-    await deployMastercopy({
+    assert.equal(await publicClient.getCode({ address }), undefined);
+
+    const result = await deployMastercopy({
       bytecode,
       constructorArgs,
       salt,
-      provider: createEIP1193(hardhatProvider, signer),
+      provider,
     });
-    expect(await provider.getCode(address)).to.not.equal("0x");
+    assert.deepEqual(result, { address, noop: false });
+    assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const module = (await ethers.getContractAt(
-      "TestModule",
-      address,
-      signer
-    )) as any;
+    const module = await viem.getContractAt("TestModule", address);
+    assert.equal(await module.read.avatar(), avatar);
 
-    expect(await module.avatar()).to.equal(avatar);
+    assert.deepEqual(
+      await deployMastercopy({ bytecode, constructorArgs, salt, provider }),
+      { address, noop: true }
+    );
   });
 });

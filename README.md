@@ -25,11 +25,11 @@ Import from `@zodiaceco/core-contracts/contracts/...`:
 - [`factory/ModuleProxyFactory.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/factory/ModuleProxyFactory.sol) — deploys deterministic minimal proxies pointing to a mastercopy.
 - [`interfaces/IAvatar.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/interfaces/IAvatar.sol), [`interfaces/IGuard.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/interfaces/IGuard.sol) — core Avatar and Guard interfaces.
 
-## Deployment Helpers
+## TypeScript Helpers
 
 ### Encoding (`@zodiaceco/core-contracts`)
 
-Browser-safe functions that encode `{ to, data }` deployment payloads and predict deterministic addresses.
+Browser-safe functions, built on [viem](https://viem.sh), that encode `{ to, data }` deployment payloads and predict deterministic addresses. `types` accepts human-readable ABI parameters (`"address"`, `"(address to, uint256 value)[]"`) or viem `AbiParameter` objects.
 
 ```ts
 import {
@@ -39,9 +39,9 @@ import {
 
 const args = {
   mastercopy: "0x...",
-  setupArgs: { types: ["address", "uint256"], values: ["0x...", 0] },
-  saltNonce: 0,
-};
+  setupArgs: { types: ["address", "uint256"], values: ["0x...", 0n] },
+  saltNonce: 0n,
+} as const;
 
 const tx = encodeDeployProxy(args);
 const address = predictProxyAddress(args);
@@ -55,9 +55,9 @@ import {
 
 const args = {
   bytecode: "0x...",
-  constructorArgs: { types: ["uint256"], values: [0] },
+  constructorArgs: { types: ["uint256"], values: [0n] },
   salt: "0x...",
-};
+} as const;
 
 const tx = encodeDeploySingleton(args);
 const address = predictSingletonAddress(args);
@@ -80,15 +80,15 @@ await deployFactories({ provider });
 
 const mastercopy = await deployMastercopy({
   bytecode,
-  constructorArgs: { types: ["uint256"], values: [0] },
+  constructorArgs: { types: ["uint256"], values: [0n] },
   salt,
   provider,
 });
 
 const proxy = await deployProxy({
   mastercopy: mastercopy.address,
-  setupArgs: { types: ["address", "uint256"], values: [owner, 0] },
-  saltNonce: 0,
+  setupArgs: { types: ["address", "uint256"], values: [owner, 0n] },
+  saltNonce: 0n,
   provider,
 });
 
@@ -102,7 +102,7 @@ await verifyMastercopy({
     compilerVersion: "v0.8.30+commit.73712a01",
     compilerInput,
     address: mastercopy.address,
-    constructorArgs: { types: ["uint256"], values: [0] },
+    constructorArgs: { types: ["uint256"], values: [0n] },
   },
 });
 ```

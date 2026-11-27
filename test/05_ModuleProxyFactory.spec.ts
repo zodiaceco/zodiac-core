@@ -1,11 +1,22 @@
-import { expect } from "chai";
-import { AbiCoder, Contract, getAddress, ZeroAddress } from "ethers";
+import assert from "node:assert/strict";
+import { beforeEach, after, describe, it } from "node:test";
 
 import { network } from "hardhat";
+import {
+  encodeAbiParameters,
+  encodeFunctionData,
+  getAddress,
+  parseAbiParameters,
+  parseEventLogs,
+  zeroAddress,
+  type Hash,
+  type Hex,
+} from "viem";
+
 import { predictProxyAddress } from "../src/index";
 
 const connection = await network.create();
-const { ethers } = connection;
+const { viem } = connection;
 
 describe("ModuleProxyFactory", () => {
   after(async () => {
@@ -13,171 +24,158 @@ describe("ModuleProxyFactory", () => {
   });
 
   const AddressOne = "0x0000000000000000000000000000000000000001";
+  const saltNonce = 0x7255n;
 
-  let moduleFactory: Contract;
-  let moduleMasterCopy: Contract;
-  let avatarAddress: string;
-  let initData: string;
-  let setupArgs: { types: any[]; values: any[] };
+  let moduleFactory: Awaited<ReturnType<typeof deployFactory>>;
+  let moduleMasterCopy: Awaited<ReturnType<typeof deployMastercopy>>;
+  let avatarAddress: `0x${string}`;
+  let initData: Hex;
+  let setupArgs: { types: string[]; values: unknown[] };
 
-  const saltNonce = "0x7255";
+  function deployFactory() {
+    return viem.deployContract("ModuleProxyFactory");
+  }
+
+  function deployMastercopy(avatar: `0x${string}`) {
+    return viem.deployContract("TestModule", [avatar, avatar]);
+  }
+
+  async function createdProxy(hash: Hash | Promise<Hash>) {
+    const publicClient = await viem.getPublicClient();
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: await hash,
+    });
+    const [event] = parseEventLogs({
+      abi: moduleFactory.abi,
+      logs: receipt.logs,
+      eventName: "ModuleProxyCreation",
+    });
+    return event.args.proxy;
+  }
 
   beforeEach(async () => {
-    const Avatar = await ethers.getContractFactory("TestAvatar");
-    const avatar = await Avatar.deploy();
-    const ModuleProxyFactory =
-      await ethers.getContractFactory("ModuleProxyFactory");
-    moduleFactory = await ModuleProxyFactory.deploy();
+    const avatar = await viem.deployContract("TestAvatar");
+    moduleFactory = await deployFactory();
+    moduleMasterCopy = await deployMastercopy(avatar.address);
 
-    const MasterCopyModule = await ethers.getContractFactory("TestModule");
-    moduleMasterCopy = await MasterCopyModule.deploy(
-      await avatar.getAddress(),
-      await avatar.getAddress()
-    );
-    const encodedInitParams = AbiCoder.defaultAbiCoder().encode(
-      ["address", "address"],
-      [await avatar.getAddress(), await avatar.getAddress()]
-    );
-    initData = moduleMasterCopy.interface.encodeFunctionData("setUp", [
-      encodedInitParams,
-    ]);
+    initData = encodeFunctionData({
+      abi: moduleMasterCopy.abi,
+      functionName: "setUp",
+      args: [
+        encodeAbiParameters(parseAbiParameters("address, address"), [
+          avatar.address,
+          avatar.address,
+        ]),
+      ],
+    });
     setupArgs = {
       types: ["address", "address"],
-      values: [await avatar.getAddress(), await avatar.getAddress()],
+      values: [avatar.address, avatar.address],
     };
-    avatarAddress = await avatar.getAddress();
+    avatarAddress = getAddress(avatar.address);
   });
 
   describe("createProxy", () => {
-    /**
-     * Tests the deployment of a proxy module.
-     * Verifies that the deployed address matches the predicted address.
-     */
     it("should deploy the expected address", async () => {
-      const mastercopy = getAddress(await moduleMasterCopy.getAddress());
-
-      const expectedAddress = await predictProxyAddress({
-        factory: await moduleFactory.getAddress(),
-        mastercopy,
+      const expectedAddress = predictProxyAddress({
+        factory: moduleFactory.address,
+        mastercopy: moduleMasterCopy.address,
         setupArgs,
         saltNonce,
       });
 
-      const deploymentTx = await moduleFactory.deployModule(
-        await moduleMasterCopy.getAddress(),
-        initData,
-        saltNonce
-      );
-
-      const transaction = await deploymentTx.wait();
-      const event = transaction.logs.find(
-        (log: any) => log.fragment?.name === "ModuleProxyCreation"
-      );
-      const [actualAddress] = event.args;
-
-      expect(expectedAddress).to.be.equal(actualAddress);
-    });
-
-    /**
-     * Tests the deployment of a proxy module with a zero address.
-     * Verifies that the deployment fails and reverts with a ZeroAddress error.
-     */
-    it("should fail to deploy module because address is zero", async () => {
-      await expect(moduleFactory.deployModule(ZeroAddress, initData, saltNonce))
-        .to.be.revertedWithCustomError(moduleFactory, "ZeroAddress")
-        .withArgs(ZeroAddress);
-    });
-
-    /**
-     * Tests the deployment of a proxy module with a target address that has no code deployed.
-     * Verifies that the deployment fails and reverts with a TargetHasNoCode error.
-     */
-    it("should fail to deploy module because target has no code deployed", async () => {
-      await expect(moduleFactory.deployModule(AddressOne, initData, saltNonce))
-        .to.be.revertedWithCustomError(moduleFactory, "TargetHasNoCode")
-        .withArgs(AddressOne);
-    });
-
-    /**
-     * Tests the deployment of a proxy module to an address that is already taken.
-     * Verifies that the deployment fails and reverts with a TakenAddress error.
-     */
-    it("should fail to deploy because address is already taken", async () => {
-      await moduleFactory.deployModule(
-        await moduleMasterCopy.getAddress(),
-        initData,
-        saltNonce
-      );
-
-      await expect(
-        moduleFactory.deployModule(
-          await moduleMasterCopy.getAddress(),
+      const actualAddress = await createdProxy(
+        moduleFactory.write.deployModule([
+          moduleMasterCopy.address,
           initData,
-          saltNonce
-        )
-      )
-        .to.be.revertedWithCustomError(moduleFactory, "TakenAddress")
-        .withArgs(ZeroAddress);
+          saltNonce,
+        ])
+      );
+
+      assert.equal(actualAddress, expectedAddress);
+    });
+
+    it("should fail to deploy module because address is zero", async () => {
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        moduleFactory.write.deployModule([zeroAddress, initData, saltNonce]),
+        moduleFactory,
+        "ZeroAddress",
+        [zeroAddress]
+      );
+    });
+
+    it("should fail to deploy module because target has no code deployed", async () => {
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        moduleFactory.write.deployModule([AddressOne, initData, saltNonce]),
+        moduleFactory,
+        "TargetHasNoCode",
+        [AddressOne]
+      );
+    });
+
+    it("should fail to deploy because address is already taken", async () => {
+      await moduleFactory.write.deployModule([
+        moduleMasterCopy.address,
+        initData,
+        saltNonce,
+      ]);
+
+      await viem.assertions.revertWithCustomErrorWithArgs(
+        moduleFactory.write.deployModule([
+          moduleMasterCopy.address,
+          initData,
+          saltNonce,
+        ]),
+        moduleFactory,
+        "TakenAddress",
+        [zeroAddress]
+      );
     });
   });
 
   describe("deployModule", () => {
-    /**
-     * Tests the deployment of a module.
-     * Verifies that the module can be deployed successfully and the avatar address is correct.
-     */
     it("should deploy module", async () => {
-      const deploymentTx = await moduleFactory.deployModule(
-        await moduleMasterCopy.getAddress(),
-        initData,
-        saltNonce
+      const moduleAddress = await createdProxy(
+        moduleFactory.write.deployModule([
+          moduleMasterCopy.address,
+          initData,
+          saltNonce,
+        ])
       );
-      const transaction = await deploymentTx.wait();
-      const event = transaction.logs.find(
-        (log: any) => log.fragment?.name === "ModuleProxyCreation"
-      );
-      const [moduleAddress] = event.args;
 
-      const newModule = await ethers.getContractAt("TestModule", moduleAddress);
-
-      const moduleAvatar = await newModule.avatar();
-      expect(moduleAvatar).to.be.equal(avatarAddress);
+      const newModule = await viem.getContractAt("TestModule", moduleAddress);
+      assert.equal(await newModule.read.avatar(), avatarAddress);
     });
 
-    /**
-     * Tests the deployment of a module.
-     * Verifies that the ModuleProxyCreation event is emitted on module deployment.
-     */
     it("should emit event on module deployment", async () => {
-      const moduleAddress = await predictProxyAddress({
-        factory: await moduleFactory.getAddress(),
-        mastercopy: await moduleMasterCopy.getAddress(),
+      const moduleAddress = predictProxyAddress({
+        factory: moduleFactory.address,
+        mastercopy: moduleMasterCopy.address,
         setupArgs,
         saltNonce,
       });
-      await expect(
-        moduleFactory.deployModule(
-          await moduleMasterCopy.getAddress(),
+      await viem.assertions.emitWithArgs(
+        moduleFactory.write.deployModule([
+          moduleMasterCopy.address,
           initData,
-          saltNonce
-        )
-      )
-        .to.emit(moduleFactory, "ModuleProxyCreation")
-        .withArgs(moduleAddress, await moduleMasterCopy.getAddress());
+          saltNonce,
+        ]),
+        moduleFactory,
+        "ModuleProxyCreation",
+        [moduleAddress, moduleMasterCopy.address]
+      );
     });
 
-    /**
-     * Tests the deployment of a module with invalid parameters.
-     * Verifies that the deployment fails and reverts with a FailedInitialization error.
-     */
     it("should fail to deploy because parameters are not valid", async () => {
-      await expect(
-        moduleFactory.deployModule(
-          await moduleMasterCopy.getAddress(),
+      await viem.assertions.revertWithCustomError(
+        moduleFactory.write.deployModule([
+          moduleMasterCopy.address,
           "0xaabc",
-          saltNonce
-        )
-      ).to.be.revertedWithCustomError(moduleFactory, "FailedInitialization");
+          saltNonce,
+        ]),
+        moduleFactory,
+        "FailedInitialization"
+      );
     });
   });
 });
