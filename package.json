@@ -37,7 +37,8 @@
     "LICENSE",
     "README.md",
     "dist",
-    "contracts"
+    "contracts",
+    "!contracts/test"
   ],
   "scripts": {
     "clean": "rm -rf dist build",

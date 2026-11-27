@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: LGPL-3.0-only
-pragma solidity ^0.8.24;
+pragma solidity >=0.8.28 <0.9.0;
 
 import {BaseGuard, BaseModuleGuard} from "../guard/BaseGuard.sol";
 import {IERC165} from "../interfaces/IERC165.sol";
