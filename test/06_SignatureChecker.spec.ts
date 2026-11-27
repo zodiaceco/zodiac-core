@@ -1,24 +1,23 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import { concat, size, zeroAddress, type Address, type Hex } from "viem";
 
-import { salt, signModuleTx, type ModuleTx } from "../test-helpers/moduleTx";
+import { salt, signModuleTx, type ModuleTx } from "./helpers/moduleTx";
 
-const connection = await network.create();
-const { viem, networkHelpers } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { deployContract, getContractAt, loadFixture, assertions } = chain;
 
 describe("SignatureChecker", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   async function setup() {
-    const [signer, relayer] = await viem.getWalletClients();
-    const deployed = await viem.deployContract("TestSignature");
-    const testSignature = await viem.getContractAt(
+    const [signer, relayer] = chain.walletClients;
+    const deployed = await deployContract("TestSignature");
+    const testSignature = await getContractAt(
       "TestSignature",
       deployed.address,
       { client: { wallet: relayer } }
@@ -50,7 +49,7 @@ describe("SignatureChecker", () => {
     signature: Hex,
     expected: Address
   ) {
-    await viem.assertions.emitWithArgs(
+    await assertions.emitWithArgs(
       testSignature.write.check([
         tx.to,
         tx.value,
@@ -116,8 +115,7 @@ describe("SignatureChecker", () => {
     it("uses the first 20 bytes as ERC1271 signer", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } =
-        await viem.deployContract("ContractSignerYes");
+      const { address: signer } = await deployContract("ContractSignerYes");
 
       const tx = moduleTx();
 
@@ -140,9 +138,7 @@ describe("SignatureChecker", () => {
     it("signer returns isValid maybe", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract(
-        "ContractSignerMaybe"
-      );
+      const { address: signer } = await deployContract("ContractSignerMaybe");
 
       const tx = moduleTx();
       const sigGood = makeContractSignature("0x001122334455", signer);
@@ -161,8 +157,7 @@ describe("SignatureChecker", () => {
     it("signer returns isValid yes", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } =
-        await viem.deployContract("ContractSignerYes");
+      const { address: signer } = await deployContract("ContractSignerYes");
 
       const sig = makeContractSignature("0xaabbccddeeff", signer);
       await expectRecovered(
@@ -177,7 +172,7 @@ describe("SignatureChecker", () => {
     it("signer returns isValid no", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract("ContractSignerNo");
+      const { address: signer } = await deployContract("ContractSignerNo");
 
       const sig = makeContractSignature("0xaabbccddeeff", signer);
       await expectRecovered(
@@ -192,7 +187,7 @@ describe("SignatureChecker", () => {
     it("signer returns isValid for empty specific signature only", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract(
+      const { address: signer } = await deployContract(
         "ContractSignerOnlyEmpty"
       );
 
@@ -213,7 +208,7 @@ describe("SignatureChecker", () => {
     it("supports empty ERC1271 contract signatures", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract(
+      const { address: signer } = await deployContract(
         "ContractSignerOnlyEmpty"
       );
 
@@ -232,7 +227,7 @@ describe("SignatureChecker", () => {
     it("signer bad return size", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract(
+      const { address: signer } = await deployContract(
         "ContractSignerReturnSize"
       );
 
@@ -249,9 +244,7 @@ describe("SignatureChecker", () => {
     it("signer with faulty entrypoint", async () => {
       const { testSignature } = await loadFixture(setup);
 
-      const { address: signer } = await viem.deployContract(
-        "ContractSignerFaulty"
-      );
+      const { address: signer } = await deployContract("ContractSignerFaulty");
 
       const sig = makeContractSignature("0xaabbccddeeff", signer);
       await expectRecovered(
@@ -265,7 +258,7 @@ describe("SignatureChecker", () => {
 
     it("signer with no code deployed", async () => {
       const { testSignature } = await loadFixture(setup);
-      const publicClient = await viem.getPublicClient();
+      const publicClient = chain.publicClient;
 
       const signerAddress = "0x1234567890000000000000000000000123456789";
       assert.equal(

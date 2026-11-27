@@ -1,16 +1,15 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import { zeroAddress } from "viem";
 
-const connection = await network.create();
-const { viem, networkHelpers } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { deployContract, getContractAt, loadFixture, assertions } = chain;
 
 describe("Guard", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   /**
@@ -18,25 +17,21 @@ describe("Guard", () => {
    * contracts and enables the module in the avatar.
    */
   async function setupTests() {
-    const [owner, other, relayer] = await viem.getWalletClients();
-    const avatar = await viem.deployContract("TestAvatar");
-    const module = await viem.deployContract(
+    const [owner, other, relayer] = chain.walletClients;
+    const avatar = await deployContract("TestAvatar");
+    const module = await deployContract(
       "TestModule",
       [avatar.address, avatar.address],
       { client: { wallet: owner } }
     );
     await avatar.write.enableModule([module.address]);
 
-    const deployedGuard = await viem.deployContract("TestGuard", [
-      module.address,
-    ]);
-    const guard = await viem.getContractAt("TestGuard", deployedGuard.address, {
+    const deployedGuard = await deployContract("TestGuard", [module.address]);
+    const guard = await getContractAt("TestGuard", deployedGuard.address, {
       client: { wallet: relayer },
     });
 
-    const guardNonCompliant = await viem.deployContract(
-      "TestNonCompliantGuard"
-    );
+    const guardNonCompliant = await deployContract("TestNonCompliantGuard");
 
     return { owner, other, module, guard, guardNonCompliant };
   }
@@ -45,7 +40,7 @@ describe("Guard", () => {
     describe("setGuard", () => {
       it("reverts if caller is not the owner", async () => {
         const { other, guard, module } = await loadFixture(setupTests);
-        await viem.assertions.revertWithCustomErrorWithArgs(
+        await assertions.revertWithCustomErrorWithArgs(
           module.write.setGuard([guard.address], { account: other.account }),
           module,
           "OwnableUnauthorizedAccount",
@@ -55,12 +50,12 @@ describe("Guard", () => {
 
       it("reverts if guard does not implement ERC165", async () => {
         const { module } = await loadFixture(setupTests);
-        await viem.assertions.revert(module.write.setGuard([module.address]));
+        await assertions.revert(module.write.setGuard([module.address]));
       });
 
       it("reverts if guard implements ERC165 and returns false", async () => {
         const { module, guardNonCompliant } = await loadFixture(setupTests);
-        await viem.assertions.revertWithCustomErrorWithArgs(
+        await assertions.revertWithCustomErrorWithArgs(
           module.write.setGuard([guardNonCompliant.address]),
           module,
           "NotIERC165Compliant",
@@ -70,7 +65,7 @@ describe("Guard", () => {
 
       it("sets module and emits event", async () => {
         const { module, guard } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           module.write.setGuard([guard.address]),
           module,
           "ChangedGuard",
@@ -80,14 +75,14 @@ describe("Guard", () => {
 
       it("sets guard back to zero", async () => {
         const { module, guard } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           module.write.setGuard([guard.address]),
           module,
           "ChangedGuard",
           [guard.address]
         );
 
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           module.write.setGuard([zeroAddress]),
           module,
           "ChangedGuard",
@@ -124,7 +119,7 @@ describe("Guard", () => {
     describe("checkModuleTransaction", () => {
       it("reverts if test fails", async () => {
         const { guard, module } = await loadFixture(setupTests);
-        await viem.assertions.revertWith(
+        await assertions.revertWith(
           guard.write.checkModuleTransaction([
             module.address,
             1337n,
@@ -138,7 +133,7 @@ describe("Guard", () => {
 
       it("checks module transaction", async () => {
         const { guard, module } = await loadFixture(setupTests);
-        await viem.assertions.emit(
+        await assertions.emit(
           guard.write.checkModuleTransaction([
             module.address,
             0n,
@@ -155,7 +150,7 @@ describe("Guard", () => {
     describe("checkAfterModuleExecution", () => {
       it("reverts if test fails", async () => {
         const { guard } = await loadFixture(setupTests);
-        await viem.assertions.revertWith(
+        await assertions.revertWith(
           guard.write.checkAfterModuleExecution([moduleTxHash, true]),
           "Module cannot remove its own guard."
         );
@@ -163,13 +158,13 @@ describe("Guard", () => {
 
       it("checks state after module execution", async () => {
         const { module, guard } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           module.write.setGuard([guard.address]),
           module,
           "ChangedGuard",
           [guard.address]
         );
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           guard.write.checkAfterModuleExecution([moduleTxHash, true]),
           guard,
           "PostChecked",

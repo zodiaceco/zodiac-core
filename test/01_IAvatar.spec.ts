@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import { getAddress, zeroAddress } from "viem";
 
-const connection = await network.create();
-const { viem, networkHelpers } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { deployContract, loadFixture, assertions } = chain;
 
 describe("IAvatar", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   async function setupTests() {
-    const [user1] = await viem.getWalletClients();
-    const iAvatar = await viem.deployContract("TestAvatar");
+    const [user1] = chain.walletClients;
+    const iAvatar = await deployContract("TestAvatar");
     const tx = {
       to: iAvatar.address,
       value: 0n,
@@ -49,7 +48,7 @@ describe("IAvatar", () => {
   describe("execTransactionFromModule", () => {
     it("revert if module is not enabled", async () => {
       const { iAvatar, tx } = await loadFixture(setupTests);
-      await viem.assertions.revertWith(
+      await assertions.revertWith(
         iAvatar.write.execTransactionFromModule([
           tx.to,
           tx.value,
@@ -75,7 +74,7 @@ describe("IAvatar", () => {
   describe("execTransactionFromModuleReturnData", () => {
     it("revert if module is not enabled", async () => {
       const { iAvatar, tx } = await loadFixture(setupTests);
-      await viem.assertions.revertWith(
+      await assertions.revertWith(
         iAvatar.write.execTransactionFromModuleReturnData([
           tx.to,
           tx.value,

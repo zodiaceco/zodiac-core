@@ -1,6 +1,6 @@
 import type { Address } from "viem";
 
-import type { EIP1193Provider } from "../src/types";
+import type { EIP1193Provider } from "../../src/types";
 
 /**
  * Wraps an EIP-1193 provider so that `eth_sendTransaction` requests without a

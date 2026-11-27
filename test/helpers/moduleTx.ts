@@ -1,5 +1,7 @@
 import { keccak256, toHex, type Address, type Hex } from "viem";
 
+import { CHAIN_ID } from "./constants";
+
 export type ModuleTx = {
   to: Address;
   value: bigint;
@@ -11,8 +13,6 @@ export type Signer = {
   account: { address: Address };
   signTypedData: (args: any) => Promise<Hex>;
 };
-
-export const HARDHAT_CHAIN_ID = 31337;
 
 export function salt(text: string): Hex {
   return keccak256(toHex(text));
@@ -30,7 +30,7 @@ export function signModuleTx(
 ): Promise<Hex> {
   return signer.signTypedData({
     account: signer.account,
-    domain: { chainId: HARDHAT_CHAIN_ID, verifyingContract: contract },
+    domain: { chainId: CHAIN_ID, verifyingContract: contract },
     types: {
       ModuleTx: [
         { type: "address", name: "to" },

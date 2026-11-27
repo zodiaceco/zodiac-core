@@ -40,15 +40,15 @@
     "contracts"
   ],
   "scripts": {
-    "build": "hardhat compile && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json",
+    "build": "tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json",
     "postbuild": "node postbuild.mjs",
     "clean": "rm -rf dist build",
-    "test": "hardhat test nodejs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "coverage": "hardhat --coverage test nodejs",
+    "compile": "node scripts/compile.ts",
+    "test": "yarn compile && node --import tsx --test 'test/**/*.spec.ts'",
+    "typecheck": "yarn compile && tsc -p tsconfig.json --noEmit",
     "format": "yarn format:sol && yarn format:ts",
     "format:sol": "prettier --write --plugin=prettier-plugin-solidity ./contracts/**/*.sol",
-    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./test-helpers/**/*.ts ./*.ts",
+    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./scripts/**/*.ts",
     "prepare": "yarn clean && yarn build",
     "prerelease": "yarn clean && yarn build"
   },
@@ -60,14 +60,11 @@
     "url": "git+https://github.com/zodiaceco/zodiac-core.git"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-network-helpers": "3.0.12",
-    "@nomicfoundation/hardhat-node-test-runner": "3.1.3",
-    "@nomicfoundation/hardhat-viem": "3.1.0",
-    "@nomicfoundation/hardhat-viem-assertions": "3.1.5",
     "@types/node": "24.19.4",
-    "hardhat": "3.23.0",
     "prettier": "3.10.1",
     "prettier-plugin-solidity": "2.5.0",
+    "solc": "0.8.30",
+    "tsx": "4.23.15",
     "typescript": "7.0.2"
   },
   "dependencies": {

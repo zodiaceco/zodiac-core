@@ -107,6 +107,18 @@ await verifyMastercopy({
 });
 ```
 
+## Development
+
+Tests need [anvil](https://getfoundry.sh/introduction/installation), installed with `foundryup`.
+
+```bash
+yarn test
+```
+
+`yarn test` compiles `contracts/` with solc-js into `build/contracts.ts` (skipped when no source changed), then runs `test/**/*.spec.ts` with `node:test`. Each test file starts its own anvil chain on a free port, booted from `test/helpers/genesis.json`, which holds the Safe 1.4.1 deployments and nothing else. The tests deploy the contracts under test themselves.
+
+`node scripts/genesis.ts [rpc-url]` regenerates the genesis from mainnet.
+
 ## Audits
 
 - [September 2021](https://github.com/zodiaceco/zodiac-core/blob/master/audits/GnosisZodiac2021Sep.pdf) (G0 Group) — initial Zodiac contracts

@@ -1,22 +1,20 @@
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import { encodeFunctionData } from "viem";
 
-import assertNotEmitted from "../test-helpers/assertNotEmitted";
 import {
   salt as makeSalt,
   signModuleTx,
   type ModuleTx,
-} from "../test-helpers/moduleTx";
+} from "./helpers/moduleTx";
 
-const connection = await network.create();
-const { viem, networkHelpers } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { deployContract, loadFixture, assertions } = chain;
 
 describe("GuardableModifier", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   /**
@@ -24,22 +22,19 @@ describe("GuardableModifier", () => {
    * modifier on the avatar and the executor on the modifier.
    */
   async function setupTests() {
-    const [, executor, signer, someone, relayer] =
-      await viem.getWalletClients();
-    const publicClient = await viem.getPublicClient();
+    const [, executor, signer, someone, relayer] = chain.walletClients;
 
-    const avatar = await viem.deployContract("TestAvatar");
-    const modifier = await viem.deployContract("TestGuardableModifier", [
+    const avatar = await deployContract("TestAvatar");
+    const modifier = await deployContract("TestGuardableModifier", [
       avatar.address,
       avatar.address,
     ]);
-    const guard = await viem.deployContract("TestGuard", [modifier.address]);
+    const guard = await deployContract("TestGuard", [modifier.address]);
 
     await avatar.write.enableModule([modifier.address]);
     await modifier.write.enableModule([executor.account.address]);
 
     return {
-      publicClient,
       executor,
       signer,
       someone,
@@ -94,7 +89,7 @@ describe("GuardableModifier", () => {
           await loadFixture(setupTests);
         await modifier.write.setGuard([guard.address]);
 
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write[name]([avatar.address, 0n, "0x", 0], {
             account: executor.account,
           }),
@@ -111,7 +106,7 @@ describe("GuardableModifier", () => {
         await modifier.write.enableModule([signer.account.address]);
         await modifier.write.setGuard([guard.address]);
 
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write[signedName](await signedEnableModule(setup), {
             account: relayer.account,
           }),
@@ -126,7 +121,7 @@ describe("GuardableModifier", () => {
           await loadFixture(setupTests);
         await modifier.write.setGuard([guard.address]);
 
-        await viem.assertions.revertWith(
+        await assertions.revertWith(
           modifier.write[name]([avatar.address, 1337n, "0x", 0], {
             account: executor.account,
           }),
@@ -135,11 +130,10 @@ describe("GuardableModifier", () => {
       });
 
       it("skips post-check if no guard is enabled", async () => {
-        const { publicClient, avatar, executor, modifier, guard } =
+        const { avatar, executor, modifier, guard } =
           await loadFixture(setupTests);
 
-        await assertNotEmitted(
-          publicClient,
+        await assertions.notEmit(
           modifier.write[name]([avatar.address, 0n, "0x", 0], {
             account: executor.account,
           }),
@@ -153,7 +147,7 @@ describe("GuardableModifier", () => {
           await loadFixture(setupTests);
         await modifier.write.setGuard([guard.address]);
 
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write[name]([avatar.address, 0n, "0x", 0], {
             account: executor.account,
           }),

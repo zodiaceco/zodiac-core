@@ -1,26 +1,22 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import { getAddress, hashStruct, keccak256, toHex, zeroAddress } from "viem";
 
-import {
-  HARDHAT_CHAIN_ID,
-  salt as makeSalt,
-  signModuleTx,
-} from "../test-helpers/moduleTx";
+import { CHAIN_ID } from "./helpers/constants";
+import { salt as makeSalt, signModuleTx } from "./helpers/moduleTx";
 
 const AddressZero = zeroAddress;
 const AddressOne = "0x0000000000000000000000000000000000000001";
 const SENTINEL_MODULES = AddressOne;
 
-const connection = await network.create();
-const { viem, networkHelpers } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { deployContract, loadFixture, assertions } = chain;
 
 describe("Modifier", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   /**
@@ -28,9 +24,9 @@ describe("Modifier", () => {
    * on the avatar, and prepares a transaction for testing.
    */
   async function setupTests() {
-    const [signer, alice, bob, charlie] = await viem.getWalletClients();
-    const iAvatar = await viem.deployContract("TestAvatar");
-    const modifier = await viem.deployContract("TestModifier", [
+    const [signer, alice, bob, charlie] = chain.walletClients;
+    const iAvatar = await deployContract("TestAvatar");
+    const modifier = await deployContract("TestModifier", [
       iAvatar.address,
       iAvatar.address,
     ]);
@@ -63,7 +59,7 @@ describe("Modifier", () => {
   describe("setupModules", () => {
     it("reverts if called more than once", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.write.attemptToSetupModules(),
         modifier,
         "SetupModulesAlreadyCalled"
@@ -74,7 +70,7 @@ describe("Modifier", () => {
   describe("enableModule", () => {
     it("reverts if caller is not the owner", async () => {
       const { modifier, alice: user2 } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.enableModule([user2.account.address], {
           account: user2.account,
         }),
@@ -86,7 +82,7 @@ describe("Modifier", () => {
 
     it("reverts if module is zero address", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.enableModule([AddressZero]),
         modifier,
         "InvalidModule",
@@ -96,7 +92,7 @@ describe("Modifier", () => {
 
     it("reverts if module is SENTINEL_MODULES", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.enableModule([SENTINEL_MODULES]),
         modifier,
         "InvalidModule",
@@ -106,13 +102,13 @@ describe("Modifier", () => {
 
     it("reverts if module is already enabled", async () => {
       const { modifier, signer: user1 } = await loadFixture(setupTests);
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "EnabledModule",
         [user1.account.address]
       );
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "AlreadyEnabledModule"
@@ -121,7 +117,7 @@ describe("Modifier", () => {
 
     it("enables a module", async () => {
       const { modifier, signer: user1 } = await loadFixture(setupTests);
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "EnabledModule",
@@ -133,7 +129,7 @@ describe("Modifier", () => {
   describe("disableModule", () => {
     it("reverts if caller is not the owner", async () => {
       const { modifier, alice: user2 } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.disableModule(
           [SENTINEL_MODULES, user2.account.address],
           { account: user2.account }
@@ -146,7 +142,7 @@ describe("Modifier", () => {
 
     it("reverts if module is zero address", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.disableModule([SENTINEL_MODULES, AddressZero]),
         modifier,
         "InvalidModule",
@@ -156,7 +152,7 @@ describe("Modifier", () => {
 
     it("reverts if module is SENTINEL_MODULES", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.write.disableModule([SENTINEL_MODULES, SENTINEL_MODULES]),
         modifier,
         "InvalidModule",
@@ -166,19 +162,19 @@ describe("Modifier", () => {
 
     it("reverts if module is already disabled", async () => {
       const { modifier, signer: user1 } = await loadFixture(setupTests);
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "EnabledModule",
         [user1.account.address]
       );
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
         modifier,
         "DisabledModule",
         [user1.account.address]
       );
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
         modifier,
         "AlreadyDisabledModule"
@@ -187,13 +183,13 @@ describe("Modifier", () => {
 
     it("disables a module", async () => {
       const { modifier, signer: user1 } = await loadFixture(setupTests);
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "EnabledModule",
         [user1.account.address]
       );
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.disableModule([SENTINEL_MODULES, user1.account.address]),
         modifier,
         "DisabledModule",
@@ -226,7 +222,7 @@ describe("Modifier", () => {
 
     it("returns true if module is enabled", async () => {
       const { modifier, alice: user2 } = await loadFixture(setupTests);
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user2.account.address]),
         modifier,
         "EnabledModule",
@@ -242,7 +238,7 @@ describe("Modifier", () => {
   describe("getModulesPaginated", () => {
     it("requires page size to be greater than 0", async () => {
       const { modifier } = await loadFixture(setupTests);
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.read.getModulesPaginated([AddressOne, 0n]),
         modifier,
         "InvalidPageSize"
@@ -256,7 +252,7 @@ describe("Modifier", () => {
         alice: user2,
       } = await loadFixture(setupTests);
 
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         modifier.read.getModulesPaginated([AddressZero, 1n]),
         modifier,
         "InvalidModule",
@@ -269,7 +265,7 @@ describe("Modifier", () => {
         [[], AddressOne]
       );
 
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.read.getModulesPaginated([user2.account.address, 1n]),
         modifier,
         "InvalidModule"
@@ -300,13 +296,13 @@ describe("Modifier", () => {
         alice: user2,
       } = await loadFixture(setupTests);
 
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user1.account.address]),
         modifier,
         "EnabledModule",
         [user1.account.address]
       );
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         modifier.write.enableModule([user2.account.address]),
         modifier,
         "EnabledModule",
@@ -392,7 +388,7 @@ describe("Modifier", () => {
     describe(name, () => {
       it("reverts if module is not enabled", async () => {
         const { modifier, tx, signer } = await loadFixture(setupTests);
-        await viem.assertions.revertWithCustomErrorWithArgs(
+        await assertions.revertWithCustomErrorWithArgs(
           modifier.write[name]([tx.to, tx.value, tx.data, tx.operation]),
           modifier,
           "NotAuthorized",
@@ -402,14 +398,14 @@ describe("Modifier", () => {
 
       it("execute a transaction.", async () => {
         const { modifier, tx, signer: user1 } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write.enableModule([user1.account.address]),
           modifier,
           "EnabledModule",
           [user1.account.address]
         );
 
-        await viem.assertions.emit(
+        await assertions.emit(
           modifier.write[name]([tx.to, tx.value, tx.data, tx.operation], {
             account: user1.account,
           }),
@@ -425,7 +421,7 @@ describe("Modifier", () => {
           signer: user1,
           alice: relayer,
         } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write.enableModule([user1.account.address]),
           modifier,
           "EnabledModule",
@@ -434,7 +430,7 @@ describe("Modifier", () => {
 
         const signature = await signModuleTx(user1, modifier.address, tx, salt);
 
-        await viem.assertions.revertWithCustomError(
+        await assertions.revertWithCustomError(
           modifier.write[signedName]([tx, salt, "0x"], {
             account: relayer.account,
           }),
@@ -442,7 +438,7 @@ describe("Modifier", () => {
           "NotAuthorized"
         );
 
-        await viem.assertions.emit(
+        await assertions.emit(
           modifier.write[signedName]([tx, salt, signature], {
             account: relayer.account,
           }),
@@ -459,7 +455,7 @@ describe("Modifier", () => {
           alice: user2,
           bob: relayer,
         } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write.enableModule([user1.account.address]),
           modifier,
           "EnabledModule",
@@ -479,7 +475,7 @@ describe("Modifier", () => {
           salt
         );
 
-        await viem.assertions.revertWithCustomError(
+        await assertions.revertWithCustomError(
           modifier.write[signedName]([tx, salt, signatureBad], {
             account: relayer.account,
           }),
@@ -487,7 +483,7 @@ describe("Modifier", () => {
           "NotAuthorized"
         );
 
-        await viem.assertions.emit(
+        await assertions.emit(
           modifier.write[signedName]([tx, salt, signatureOk], {
             account: relayer.account,
           }),
@@ -504,7 +500,7 @@ describe("Modifier", () => {
           alice: user2,
           bob: relayer,
         } = await loadFixture(setupTests);
-        await viem.assertions.emitWithArgs(
+        await assertions.emitWithArgs(
           modifier.write.enableModule([user1.account.address]),
           modifier,
           "EnabledModule",
@@ -524,7 +520,7 @@ describe("Modifier", () => {
           salt
         );
 
-        await viem.assertions.revertWithCustomError(
+        await assertions.revertWithCustomError(
           modifier.write[signedName]([tx, salt, signatureBad], {
             account: relayer.account,
           }),
@@ -532,7 +528,7 @@ describe("Modifier", () => {
           "NotAuthorized"
         );
 
-        await viem.assertions.emit(
+        await assertions.emit(
           modifier.write[signedName]([tx, salt, signatureOk], {
             account: relayer.account,
           }),
@@ -540,7 +536,7 @@ describe("Modifier", () => {
           event
         );
 
-        await viem.assertions.revertWithCustomError(
+        await assertions.revertWithCustomError(
           modifier.write[signedName]([tx, salt, signatureOk], {
             account: relayer.account,
           }),
@@ -569,7 +565,7 @@ describe("Modifier", () => {
         const hash = await modifier.read.moduleTxHash([tx, salt]);
         await modifier.write.invalidate([hash]);
 
-        await viem.assertions.revertWithCustomError(
+        await assertions.revertWithCustomError(
           modifier.write[signedName]([tx, salt, signatureOk], {
             account: relayer.account,
           }),
@@ -652,7 +648,7 @@ describe("Modifier", () => {
       await modifier.write.enableModule([alice.account.address]);
 
       const domain = {
-        chainId: HARDHAT_CHAIN_ID,
+        chainId: CHAIN_ID,
         verifyingContract: modifier.address,
       };
       const types = {
@@ -684,7 +680,7 @@ describe("Modifier", () => {
         { account: relayer.account }
       );
 
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.write.exposeSentOrSignedByModuleSignedStructHash(
           [structHash, signature],
           { account: relayer.account }
@@ -706,7 +702,7 @@ describe("Modifier", () => {
 
       const signature = await signModuleTx(alice, modifier.address, tx, salty);
 
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         modifier.write.exposeSentOrSignedByModuleSigned(
           [tx, salty, signature],
           { account: relayer.account }

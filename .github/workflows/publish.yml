@@ -18,7 +18,8 @@ jobs:
           key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
       - run: yarn
       - run: yarn build
-      - run: yarn coverage
+      - uses: foundry-rs/foundry-toolchain@v1.9.2
+      - run: yarn test
 
   publish-npm:
     needs: build

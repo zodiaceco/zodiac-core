@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { artifacts, network } from "hardhat";
+import { startChain } from "./helpers/chain";
+import * as contracts from "../build/contracts";
 
 import predictSingletonAddress from "../src/encoding/predictSingletonAddress";
 
 import { deployFactories, deployMastercopy } from "../src/tooling";
-import withSender from "../test-helpers/eip1193";
+import withSender from "./helpers/eip1193";
 
-const connection = await network.create();
-const { viem, networkHelpers, provider: hardhatProvider } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { getContractAt, loadFixture } = chain;
 
 async function setup() {
-  const [wallet] = await viem.getWalletClients();
-  const provider = withSender(hardhatProvider, wallet.account.address);
+  const [wallet] = chain.walletClients;
+  const provider = withSender(chain.provider, wallet.account.address);
   await deployFactories({ provider });
   return { provider };
 }
@@ -24,14 +24,14 @@ const target = "0x0000000000000000000000000000000000000456";
 
 describe("deployMastercopy", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   it("Deploys a mastercopy, at the predicted address", async () => {
     const { provider } = await loadFixture(setup);
-    const publicClient = await viem.getPublicClient();
+    const publicClient = chain.publicClient;
 
-    const { bytecode } = await artifacts.readArtifact("TestModule");
+    const { bytecode } = contracts.TestModule;
     const salt =
       "0x0000000000000000000000000000000000000000000000000000000000000001";
     const constructorArgs = {
@@ -56,7 +56,7 @@ describe("deployMastercopy", () => {
     assert.deepEqual(result, { address, noop: false });
     assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const module = await viem.getContractAt("TestModule", address);
+    const module = await getContractAt("TestModule", address);
     assert.equal(await module.read.avatar(), avatar);
 
     assert.deepEqual(

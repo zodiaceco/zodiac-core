@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 import {
   encodeAbiParameters,
   encodeFunctionData,
@@ -15,12 +15,12 @@ import {
 
 import { predictProxyAddress } from "../src/index";
 
-const connection = await network.create();
-const { viem } = connection;
+const chain = await startChain();
+const { deployContract, getContractAt, assertions } = chain;
 
 describe("ModuleProxyFactory", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   const AddressOne = "0x0000000000000000000000000000000000000001";
@@ -33,15 +33,15 @@ describe("ModuleProxyFactory", () => {
   let setupArgs: { types: string[]; values: unknown[] };
 
   function deployFactory() {
-    return viem.deployContract("ModuleProxyFactory");
+    return deployContract("ModuleProxyFactory");
   }
 
   function deployMastercopy(avatar: `0x${string}`) {
-    return viem.deployContract("TestModule", [avatar, avatar]);
+    return deployContract("TestModule", [avatar, avatar]);
   }
 
   async function createdProxy(hash: Hash | Promise<Hash>) {
-    const publicClient = await viem.getPublicClient();
+    const publicClient = chain.publicClient;
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: await hash,
     });
@@ -54,7 +54,7 @@ describe("ModuleProxyFactory", () => {
   }
 
   beforeEach(async () => {
-    const avatar = await viem.deployContract("TestAvatar");
+    const avatar = await deployContract("TestAvatar");
     moduleFactory = await deployFactory();
     moduleMasterCopy = await deployMastercopy(avatar.address);
 
@@ -96,7 +96,7 @@ describe("ModuleProxyFactory", () => {
     });
 
     it("should fail to deploy module because address is zero", async () => {
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         moduleFactory.write.deployModule([zeroAddress, initData, saltNonce]),
         moduleFactory,
         "ZeroAddress",
@@ -105,7 +105,7 @@ describe("ModuleProxyFactory", () => {
     });
 
     it("should fail to deploy module because target has no code deployed", async () => {
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         moduleFactory.write.deployModule([AddressOne, initData, saltNonce]),
         moduleFactory,
         "TargetHasNoCode",
@@ -120,7 +120,7 @@ describe("ModuleProxyFactory", () => {
         saltNonce,
       ]);
 
-      await viem.assertions.revertWithCustomErrorWithArgs(
+      await assertions.revertWithCustomErrorWithArgs(
         moduleFactory.write.deployModule([
           moduleMasterCopy.address,
           initData,
@@ -143,7 +143,7 @@ describe("ModuleProxyFactory", () => {
         ])
       );
 
-      const newModule = await viem.getContractAt("TestModule", moduleAddress);
+      const newModule = await getContractAt("TestModule", moduleAddress);
       assert.equal(await newModule.read.avatar(), avatarAddress);
     });
 
@@ -154,7 +154,7 @@ describe("ModuleProxyFactory", () => {
         setupArgs,
         saltNonce,
       });
-      await viem.assertions.emitWithArgs(
+      await assertions.emitWithArgs(
         moduleFactory.write.deployModule([
           moduleMasterCopy.address,
           initData,
@@ -167,7 +167,7 @@ describe("ModuleProxyFactory", () => {
     });
 
     it("should fail to deploy because parameters are not valid", async () => {
-      await viem.assertions.revertWithCustomError(
+      await assertions.revertWithCustomError(
         moduleFactory.write.deployModule([
           moduleMasterCopy.address,
           "0xaabc",

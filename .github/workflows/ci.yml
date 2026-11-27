@@ -16,17 +16,5 @@ jobs:
           key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
       - run: yarn
       - run: yarn build
+      - uses: foundry-rs/foundry-toolchain@v1.9.2
       - run: yarn test
-      - run: yarn coverage
-      - name: Coveralls
-        id: coveralls
-        continue-on-error: true
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Retry Coveralls
-        if: steps.coveralls.outcome == 'failure'
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          fail-on-error: false

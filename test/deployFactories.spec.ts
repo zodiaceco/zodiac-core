@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { network } from "hardhat";
+import { startChain } from "./helpers/chain";
 
 import { address as erc2470FactoryAddress } from "../src/factory/erc2470Factory";
 import { address as moduleFactoryAddress } from "../src/factory/proxyFactory";
@@ -9,11 +9,10 @@ import { address as nickFactoryAddress } from "../src/factory/nickFactory";
 
 import { deployFactories } from "../src/tooling";
 
-import withSender from "../test-helpers/eip1193";
+import withSender from "./helpers/eip1193";
 
-const connection = await network.create();
-const { viem, networkHelpers, provider: hardhatProvider } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { loadFixture } = chain;
 
 async function setup() {
   // loadFixture snapshots & restores; nothing else needed
@@ -27,18 +26,18 @@ const factories = [
 
 describe("deployFactories", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   async function codeOf(address: `0x${string}`) {
-    const publicClient = await viem.getPublicClient();
+    const publicClient = chain.publicClient;
     return publicClient.getCode({ address });
   }
 
   async function deploy() {
-    const [wallet] = await viem.getWalletClients();
+    const [wallet] = chain.walletClients;
     await deployFactories({
-      provider: withSender(hardhatProvider, wallet.account.address),
+      provider: withSender(chain.provider, wallet.account.address),
     });
   }
 

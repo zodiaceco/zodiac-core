@@ -1,6 +1,5 @@
 {
   "compilerOptions": {
-    "declaration": true,
     "esModuleInterop": true,
     "module": "preserve",
     "moduleResolution": "bundler",
@@ -9,13 +8,13 @@
     "strict": true,
     "target": "es2023",
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "include": [
-    "hardhat.config.ts",
     "src",
     "test",
-    "test-helpers",
-    "build/artifacts/**/*.d.ts"
+    "scripts",
+    "build/contracts.ts"
   ]
 }

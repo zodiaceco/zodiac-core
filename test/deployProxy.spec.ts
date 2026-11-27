@@ -1,25 +1,25 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { artifacts, network } from "hardhat";
+import { startChain } from "./helpers/chain";
+import * as contracts from "../build/contracts";
 
-import withSender from "../test-helpers/eip1193";
+import withSender from "./helpers/eip1193";
 
 import { deployFactories, deployMastercopy, deployProxy } from "../src/tooling";
 import { predictProxyAddress } from "../src/index";
 
-const connection = await network.create();
-const { viem, networkHelpers, provider: hardhatProvider } = connection;
-const { loadFixture } = networkHelpers;
+const chain = await startChain();
+const { getContractAt, loadFixture } = chain;
 
 const avatar = "0x0000000000000000000000000000000000000123";
 const target = "0x0000000000000000000000000000000000000456";
 
 async function setup() {
-  const [wallet] = await viem.getWalletClients();
-  const provider = withSender(hardhatProvider, wallet.account.address);
+  const [wallet] = chain.walletClients;
+  const provider = withSender(chain.provider, wallet.account.address);
 
-  const { bytecode } = await artifacts.readArtifact("TestModule");
+  const { bytecode } = contracts.TestModule;
   await deployFactories({ provider });
   const { address } = await deployMastercopy({
     bytecode,
@@ -36,12 +36,12 @@ async function setup() {
 
 describe("deployProxy", () => {
   after(async () => {
-    await connection.close();
+    await chain.stop();
   });
 
   it("Deploys a proxy at the predicted address", async () => {
     const { mastercopy, provider } = await loadFixture(setup);
-    const publicClient = await viem.getPublicClient();
+    const publicClient = chain.publicClient;
 
     const proxyAvatar = "0x0000000000000000000000000000000000000789";
     const proxyTarget = "0x0000000000000000000000000000000000000345";
@@ -70,7 +70,7 @@ describe("deployProxy", () => {
 
     assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const proxy = await viem.getContractAt("TestModule", address);
+    const proxy = await getContractAt("TestModule", address);
     assert.equal(await proxy.read.avatar(), proxyAvatar);
     assert.equal(await proxy.read.target(), proxyTarget);
 
