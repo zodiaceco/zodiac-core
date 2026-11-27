@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { keccak256, numberToHex, toHex, type Address } from "viem";
+import { keccak256, numberToHex, toHex } from "viem";
 
 import { TestModule } from "../../build/contracts";
 import predictSingletonAddress from "../../src/encoding/predictSingletonAddress";
@@ -13,7 +13,7 @@ import { addr } from "../helpers/constants";
 import { recording, withSender } from "../helpers/provider";
 
 const chain = await startChain();
-const { getContractAt, loadFixture, publicClient } = chain;
+const { getContractAt, hasCode, loadFixture } = chain;
 const [owner] = chain.walletClients;
 
 after(() => chain.stop());
@@ -30,9 +30,6 @@ const constructorArgs = {
   values: [addr(1), addr(2), addr(3)],
 };
 const params = { bytecode: TestModule.bytecode, constructorArgs, salt };
-
-const hasCode = async (address: Address) =>
-  (await publicClient.getCode({ address })) !== undefined;
 
 describe("deployMastercopy", () => {
   for (const [label, factory] of [

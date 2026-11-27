@@ -1,12 +1,26 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, it } from "node:test";
 
 import * as root from "../src/index";
 import * as tooling from "../src/tooling";
 
-const src = join(import.meta.dirname, "..", "src");
+const packageDir = join(import.meta.dirname, "..");
+const src = join(packageDir, "src");
+const manifest = JSON.parse(
+  readFileSync(join(packageDir, "package.json"), "utf8")
+);
+
+/**
+ * The source file a build output comes from: the builds compile `src/` into
+ * `dist/esm` and `dist/cjs`, keeping the file layout.
+ */
+function sourceOf(output: string) {
+  const match = /^\.\/dist\/(?:esm|cjs)\/(.+?)(?:\.d\.ts|\.js)$/.exec(output);
+  assert.ok(match, `${output} is not a build output`);
+  return join(src, `${match[1]}.ts`);
+}
 
 const ROOT_EXPORTS = [
   "encodeDeployProxy",
@@ -67,6 +81,33 @@ describe("package exports", () => {
         "function",
         name
       );
+    }
+  });
+
+  for (const [subpath, entry] of [
+    [".", "index.ts"],
+    ["./tooling", "tooling.ts"],
+  ] as const) {
+    it(`maps "${subpath}" in package.json to the build of src/${entry}`, () => {
+      const targets = manifest.exports[subpath];
+      assert.deepEqual(Object.keys(targets), ["types", "import", "require"]);
+      for (const target of Object.values<string>(targets)) {
+        assert.equal(sourceOf(target), join(src, entry), target);
+      }
+      assert.ok(existsSync(join(src, entry)));
+    });
+  }
+
+  it("maps main, module and types in package.json to the build of src/index.ts", () => {
+    for (const field of ["main", "module", "types"]) {
+      assert.equal(sourceOf(manifest[field]), join(src, "index.ts"), field);
+    }
+  });
+
+  it("publishes the contracts and the build", () => {
+    assert.equal(manifest.exports["./contracts/*"], "./contracts/*");
+    for (const path of ["dist", "contracts"]) {
+      assert.ok(manifest.files.includes(path), path);
     }
   });
 

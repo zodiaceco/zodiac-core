@@ -75,14 +75,19 @@ describe("encodeArgs", () => {
     });
   }
 
-  const invalid: [string, (string | AbiParameter)[], unknown[]][] = [
-    ["unparseable type string", ["uint257"], [1n]],
-    ["types/values length mismatch", ["address", "uint256"], [addr(1)]],
-    ["value not fitting its type", ["uint8"], [256]],
+  const invalid: [string, (string | AbiParameter)[], unknown[], string][] = [
+    ["unparseable type string", ["uint257"], [1n], "UnknownSolidityTypeError"],
+    [
+      "types/values length mismatch",
+      ["address", "uint256"],
+      [addr(1)],
+      "AbiEncodingLengthMismatchError",
+    ],
+    ["value not fitting its type", ["uint8"], [256], "IntegerOutOfRangeError"],
   ];
-  for (const [label, types, values] of invalid) {
+  for (const [label, types, values, name] of invalid) {
     it(`throws on ${label}`, () => {
-      assert.throws(() => encodeArgs({ types, values }));
+      assert.throws(() => encodeArgs({ types, values }), { name });
     });
   }
 });

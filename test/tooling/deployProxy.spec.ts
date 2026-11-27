@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import type { Address } from "viem";
-
 import { ModuleProxyFactory } from "../../build/contracts";
 import predictProxyAddress from "../../src/encoding/predictProxyAddress";
 import { address as proxyFactoryAddress } from "../../src/factory/proxyFactory";
@@ -13,7 +11,7 @@ import { addr } from "../helpers/constants";
 import { recording, withSender } from "../helpers/provider";
 
 const chain = await startChain();
-const { deployContract, getContractAt, loadFixture, publicClient, assertions } =
+const { deployContract, getContractAt, hasCode, loadFixture, assertions } =
   chain;
 const [owner] = chain.walletClients;
 
@@ -35,9 +33,6 @@ const setupArgs = {
   values: [addr(10), addr(11), addr(12)],
 };
 const factory = { abi: ModuleProxyFactory.abi, address: proxyFactoryAddress };
-
-const hasCode = async (address: Address) =>
-  (await publicClient.getCode({ address })) !== undefined;
 
 describe("deployProxy", () => {
   it("deploys and initializes a proxy at the predicted address", async () => {

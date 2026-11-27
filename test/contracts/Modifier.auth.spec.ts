@@ -14,6 +14,7 @@ import {
 import { startChain } from "../helpers/chain";
 import { addr, Operation, SENTINEL } from "../helpers/constants";
 import { fail, failedError, poke, succeed, succeeded } from "../helpers/calls";
+import * as invoke from "../helpers/invoke";
 import {
   moduleTxDigest,
   moduleTxStructHash,
@@ -85,17 +86,27 @@ const alreadyAuthenticated = (f: Fixture) =>
 
 describe("Modifier — authentication", () => {
   describe("moduleOnly", () => {
-    for (const label of ["non-module", "disabled module"] as const) {
-      it(`reverts with NotAuthorized(sender) for ${label}`, async () => {
-        const f = await loadFixture(setup);
-        const caller = label === "non-module" ? charlie : alice;
-        if (label === "disabled module") {
+    const unauthorizedCallers: [
+      string,
+      (f: Fixture) => Promise<typeof alice>,
+    ][] = [
+      ["non-module", async () => charlie],
+      [
+        "disabled module",
+        async (f) => {
           // alice sits right after bob in the list.
           await f.modifier.write.disableModule([
             bob.account.address,
             alice.account.address,
           ]);
-        }
+          return alice;
+        },
+      ],
+    ];
+    for (const [label, prepare] of unauthorizedCallers) {
+      it(`reverts with NotAuthorized(sender) for ${label}`, async () => {
+        const f = await loadFixture(setup);
+        const caller = await prepare(f);
         await assertions.revertWithCustomErrorWithArgs(
           f.modifier.write.execTransactionFromModule(
             [f.tx.to, f.tx.value, f.tx.data, f.tx.operation],
@@ -397,25 +408,29 @@ describe("Modifier — authentication", () => {
       });
     }
 
-    for (const label of [
-      "signature replayed",
-      "signer invalidated the digest",
-    ] as const) {
+    const consumers: [string, (f: Fixture, signature: Hex) => Promise<Hex>][] =
+      [
+        [
+          "signature replayed",
+          (f, signature) =>
+            f.modifier.write.execTransactionFromModuleSigned(
+              [f.tx, SALT, signature],
+              { account: charlie.account }
+            ),
+        ],
+        [
+          "signer invalidated the digest",
+          (f) =>
+            f.modifier.write.invalidate([digestOf(f)], {
+              account: alice.account,
+            }),
+        ],
+      ];
+    for (const [label, consume] of consumers) {
       it(`reverts with HashAlreadyConsumed when ${label}`, async () => {
         const f = await loadFixture(setup);
         const signature = await sign(f);
-        if (label === "signature replayed") {
-          await f.modifier.write.execTransactionFromModuleSigned(
-            [f.tx, SALT, signature],
-            {
-              account: charlie.account,
-            }
-          );
-        } else {
-          await f.modifier.write.invalidate([digestOf(f)], {
-            account: alice.account,
-          });
-        }
+        await consume(f, signature);
         await assertions.revertWithCustomErrorWithArgs(
           f.modifier.write.execTransactionFromModuleSigned(
             [f.tx, SALT, signature],
@@ -636,15 +651,11 @@ describe("Modifier — authentication", () => {
       }
       async function write(f: Fixture, tx: ModuleTx) {
         const { args, account } = await call(f, tx);
-        return (f.modifier.write as any)[variant.name](args, {
-          account,
-        }) as Promise<Hex>;
+        return invoke.write(f.modifier, variant.name, args, { account });
       }
       async function simulate(f: Fixture, tx: ModuleTx) {
         const { args, account } = await call(f, tx);
-        return (
-          await (f.modifier.simulate as any)[variant.name](args, { account })
-        ).result;
+        return invoke.simulate(f.modifier, variant.name, args, { account });
       }
 
       describe(variant.name, () => {

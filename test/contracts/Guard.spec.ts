@@ -171,8 +171,10 @@ describe("BaseModuleGuard", () => {
       );
     });
   }
+});
 
-  it("uses the interface ids documented in BaseGuard.sol", () => {
+describe("interface ids", () => {
+  it("match the ones documented in BaseGuard.sol", () => {
     assert.deepEqual(
       [IGuard, IModuleGuard, IERC165],
       ["0xe6d7a83a", "0x58401ed8", "0x01ffc9a7"]

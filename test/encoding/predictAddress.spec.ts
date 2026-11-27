@@ -20,7 +20,7 @@ import { addr } from "../helpers/constants";
 import { withSender } from "../helpers/provider";
 
 const chain = await startChain();
-const { deployContract, loadFixture, publicClient } = chain;
+const { deployContract, hasCode, loadFixture } = chain;
 const [owner] = chain.walletClients;
 
 after(() => chain.stop());
@@ -43,18 +43,17 @@ const setupArgs = {
   values: [addr(10), addr(11), addr(12)],
 };
 
-const hasCode = async (address: `0x${string}`) =>
-  (await publicClient.getCode({ address })) !== undefined;
-
 describe("predictProxyAddress", () => {
-  for (const label of [
-    "canonical factory (default)",
-    "custom factory",
-  ] as const) {
+  type Fixture = Awaited<ReturnType<typeof setup>>;
+  const factories: [string, (f: Fixture) => `0x${string}` | undefined][] = [
+    ["canonical factory (default)", () => undefined],
+    ["custom factory", (f) => f.customFactory.address],
+  ];
+  for (const [label, factoryOf] of factories) {
     it(`matches the address ModuleProxyFactory deploys to (${label})`, async () => {
-      const { mastercopy, customFactory } = await loadFixture(setup);
-      const factory =
-        label === "custom factory" ? customFactory.address : undefined;
+      const f = await loadFixture(setup);
+      const { mastercopy } = f;
+      const factory = factoryOf(f);
       const params = {
         factory,
         mastercopy: mastercopy.address,
@@ -109,16 +108,23 @@ describe("predictProxyAddress", () => {
     assert.equal(results[0], results[1]);
   });
 
-  for (const [label, params] of [
+  // The mastercopy is mixed-case with a wrong checksum. BigInt's message for
+  // the saltNonce differs between runtimes, so only its type is matched.
+  for (const [label, params, error] of [
     [
       "invalid mastercopy",
       { ...base, mastercopy: "0x5FbDB2315678afecb367f032d93F642f64180aa4" },
+      /^Error: Mastercopy address "0x5FbDB2315678afecb367f032d93F642f64180aa4" is invalid$/,
     ],
-    ["non-numeric saltNonce", { ...base, saltNonce: "salt" }],
+    ["non-numeric saltNonce", { ...base, saltNonce: "salt" }, SyntaxError],
   ] as const) {
     it(`throws on ${label}`, () => {
-      assert.throws(() =>
-        predictProxyAddress(params as Parameters<typeof predictProxyAddress>[0])
+      assert.throws(
+        () =>
+          predictProxyAddress(
+            params as Parameters<typeof predictProxyAddress>[0]
+          ),
+        error
       );
     });
   }

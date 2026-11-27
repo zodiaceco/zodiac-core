@@ -31,6 +31,7 @@ async function setupWithModules() {
 }
 
 type Modifier = Awaited<ReturnType<typeof setup>>["modifier"];
+type Wallet = typeof owner;
 
 async function listModules(modifier: Modifier) {
   const [modules] = await modifier.read.getModulesPaginated([SENTINEL, 100n]);
@@ -60,27 +61,26 @@ describe("Modifier — module list", () => {
   });
 
   describe("enableModule", () => {
-    const cases: [string, Address, string, () => Address[]][] = [
+    const cases: [string, Wallet, Address, string, Address[]][] = [
       [
         "non-owner",
+        alice,
         A,
         "OwnableUnauthorizedAccount",
-        () => [alice.account.address],
+        [alice.account.address],
       ],
-      ["zero address", zeroAddress, "InvalidModule", () => [zeroAddress]],
-      ["SENTINEL_MODULES", SENTINEL, "InvalidModule", () => [SENTINEL]],
-      ["already enabled", A, "AlreadyEnabledModule", () => [A]],
+      ["zero address", owner, zeroAddress, "InvalidModule", [zeroAddress]],
+      ["SENTINEL_MODULES", owner, SENTINEL, "InvalidModule", [SENTINEL]],
+      ["already enabled", owner, A, "AlreadyEnabledModule", [A]],
     ];
-    for (const [label, module, error, args] of cases) {
+    for (const [label, caller, module, error, args] of cases) {
       it(`reverts with ${error} for ${label}`, async () => {
         const { modifier } = await loadFixture(setupWithModules);
         await assertions.revertWithCustomErrorWithArgs(
-          modifier.write.enableModule([module], {
-            account: label === "non-owner" ? alice.account : owner.account,
-          }),
+          modifier.write.enableModule([module], { account: caller.account }),
           modifier,
           error,
-          args()
+          args
         );
       });
     }
@@ -111,41 +111,44 @@ describe("Modifier — module list", () => {
   });
 
   describe("disableModule", () => {
-    const cases: [string, Address, Address, string, () => Address[]][] = [
+    const cases: [string, Wallet, Address, Address, string, Address[]][] = [
       [
         "non-owner",
+        alice,
         SENTINEL,
         C,
         "OwnableUnauthorizedAccount",
-        () => [alice.account.address],
+        [alice.account.address],
       ],
       [
         "zero address",
+        owner,
         SENTINEL,
         zeroAddress,
         "InvalidModule",
-        () => [zeroAddress],
+        [zeroAddress],
       ],
       [
         "SENTINEL_MODULES",
+        owner,
         SENTINEL,
         SENTINEL,
         "InvalidModule",
-        () => [SENTINEL],
+        [SENTINEL],
       ],
-      ["not enabled", SENTINEL, D, "AlreadyDisabledModule", () => [D]],
-      ["wrong prevModule", SENTINEL, B, "AlreadyDisabledModule", () => [B]],
+      ["not enabled", owner, SENTINEL, D, "AlreadyDisabledModule", [D]],
+      ["wrong prevModule", owner, SENTINEL, B, "AlreadyDisabledModule", [B]],
     ];
-    for (const [label, prev, module, error, args] of cases) {
+    for (const [label, caller, prev, module, error, args] of cases) {
       it(`reverts with ${error} for ${label}`, async () => {
         const { modifier } = await loadFixture(setupWithModules);
         await assertions.revertWithCustomErrorWithArgs(
           modifier.write.disableModule([prev, module], {
-            account: label === "non-owner" ? alice.account : owner.account,
+            account: caller.account,
           }),
           modifier,
           error,
-          args()
+          args
         );
       });
     }
@@ -172,7 +175,7 @@ describe("Modifier — module list", () => {
       });
     }
 
-    it("disables the only module, emits DisabledModule, and keeps the rest linked", async () => {
+    it("disables the only module, emits DisabledModule, and leaves an empty list", async () => {
       const { modifier } = await loadFixture(setup);
       await modifier.write.enableModule([A]);
       await assertions.emitWithArgs(

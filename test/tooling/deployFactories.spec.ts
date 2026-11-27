@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 
-import { numberToHex, type Address } from "viem";
+import { numberToHex } from "viem";
 
 import * as erc2470 from "../../src/factory/erc2470Factory";
 import * as nick from "../../src/factory/nickFactory";
@@ -11,7 +11,7 @@ import { startChain } from "../helpers/chain";
 import { recording, stubProvider, withSender } from "../helpers/provider";
 
 const chain = await startChain();
-const { loadFixture, publicClient, testClient } = chain;
+const { hasCode, loadFixture, publicClient, testClient } = chain;
 const [owner] = chain.walletClients;
 
 after(() => chain.stop());
@@ -20,9 +20,6 @@ after(() => chain.stop());
 async function emptyNetwork() {
   return { provider: withSender(chain.provider, owner.account.address) };
 }
-
-const hasCode = async (address: Address) =>
-  (await publicClient.getCode({ address })) !== undefined;
 
 const fundings = (requests: ReturnType<typeof recording>["requests"]) =>
   requests

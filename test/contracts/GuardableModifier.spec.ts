@@ -6,6 +6,7 @@ import { encodeFunctionData, zeroAddress, type Hex } from "viem";
 import { startChain } from "../helpers/chain";
 import { Operation } from "../helpers/constants";
 import { fail, failedError, poke, succeed, succeeded } from "../helpers/calls";
+import * as invoke from "../helpers/invoke";
 import {
   moduleTxDigest,
   salt as makeSalt,
@@ -68,28 +69,26 @@ for (const variant of [
 
   /** Sends `tx` directly from `from`, an enabled module by default. */
   const write = (f: Fixture, tx: ModuleTx, from = alice) =>
-    (f.modifier.write as any)[variant.direct](
+    invoke.write(
+      f.modifier,
+      variant.direct,
       [tx.to, tx.value, tx.data, tx.operation],
-      {
-        account: from.account,
-      }
-    ) as Promise<Hex>;
-  const simulate = async (f: Fixture, tx: ModuleTx) =>
-    (
-      await (f.modifier.simulate as any)[variant.direct](
-        [tx.to, tx.value, tx.data, tx.operation],
-        {
-          account: alice.account,
-        }
-      )
-    ).result;
+      { account: from.account }
+    );
+  const simulate = (f: Fixture, tx: ModuleTx) =>
+    invoke.simulate(
+      f.modifier,
+      variant.direct,
+      [tx.to, tx.value, tx.data, tx.operation],
+      { account: alice.account }
+    );
   const sign = (f: Fixture, tx: ModuleTx) =>
     signModuleTx(alice, { verifyingContract: f.modifier.address }, tx, SALT);
   /** Relays `tx`, signed by alice, from charlie (not a module). */
   const writeSigned = (f: Fixture, tx: ModuleTx, signature: Hex) =>
-    (f.modifier.write as any)[variant.signed]([tx, SALT, signature], {
+    invoke.write(f.modifier, variant.signed, [tx, SALT, signature], {
       account: charlie.account,
-    }) as Promise<Hex>;
+    });
 
   describe(`GuardableModifier — ${variant.name}`, () => {
     it("executes without calling any guard when none is set", async () => {

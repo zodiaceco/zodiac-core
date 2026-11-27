@@ -6,6 +6,7 @@ import { parseEther } from "viem";
 import { startChain } from "../helpers/chain";
 import { addr, Operation } from "../helpers/constants";
 import { fail, failedError, succeed, succeeded } from "../helpers/calls";
+import * as invoke from "../helpers/invoke";
 
 const chain = await startChain();
 const { deployContract, loadFixture, assertions, testClient } = chain;
@@ -97,10 +98,9 @@ describe("Module", () => {
     describe(variant.name, () => {
       type Fixture = Awaited<ReturnType<typeof setup>>;
       const write = (m: Fixture["module"], args: readonly unknown[]) =>
-        (m.write as any)[variant.method](args) as Promise<`0x${string}`>;
-      const simulate = async (m: Fixture["module"], args: readonly unknown[]) =>
-        ((await (m.simulate as any)[variant.method](args)) as { result: any })
-          .result;
+        invoke.write(m, variant.method, args);
+      const simulate = (m: Fixture["module"], args: readonly unknown[]) =>
+        invoke.simulate(m, variant.method, args);
 
       it(`calls ${variant.call} on target, not avatar`, async () => {
         const { module, avatar, target, receiver } = await loadFixture(setup);

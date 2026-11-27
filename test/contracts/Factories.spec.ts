@@ -353,29 +353,26 @@ describe("SingletonFactory", () => {
     assert.notEqual(await getCode(result), undefined);
   });
 
-  for (const label of [
-    "address already taken",
-    "constructor reverts",
-  ] as const) {
-    it(`returns the zero address when ${label}`, async () => {
-      const f = await loadFixture(setup);
-      // PUSH1 0 PUSH1 0 REVERT
-      const initCode: Hex =
-        label === "constructor reverts" ? "0x60006000fd" : Receiver.bytecode;
-      if (label === "address already taken") {
-        await f.singletonFactory.write.deploy([initCode, SALT]);
-      }
-      const { result } = await f.singletonFactory.simulate.deploy([
-        initCode,
-        SALT,
-      ]);
-      assert.equal(result, zeroAddress);
-      if (label === "constructor reverts") {
-        assert.equal(
-          await getCode(singletonAddress(f, initCode, SALT)),
-          undefined
-        );
-      }
-    });
-  }
+  it("returns the zero address when address already taken", async () => {
+    const f = await loadFixture(setup);
+    await f.singletonFactory.write.deploy([Receiver.bytecode, SALT]);
+    const { result } = await f.singletonFactory.simulate.deploy([
+      Receiver.bytecode,
+      SALT,
+    ]);
+    assert.equal(result, zeroAddress);
+  });
+
+  it("returns the zero address when constructor reverts", async () => {
+    const f = await loadFixture(setup);
+    // PUSH1 0 PUSH1 0 REVERT
+    const initCode = "0x60006000fd";
+    const { result } = await f.singletonFactory.simulate.deploy([
+      initCode,
+      SALT,
+    ]);
+    assert.equal(result, zeroAddress);
+    await f.singletonFactory.write.deploy([initCode, SALT]);
+    assert.equal(await getCode(singletonAddress(f, initCode, SALT)), undefined);
+  });
 });

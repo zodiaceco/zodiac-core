@@ -6,6 +6,7 @@ import { encodeFunctionData, parseEther, zeroAddress, type Hex } from "viem";
 import { startChain } from "../helpers/chain";
 import { Operation } from "../helpers/constants";
 import { fail, failedError, poke, succeed, succeeded } from "../helpers/calls";
+import * as invoke from "../helpers/invoke";
 import { salt } from "../helpers/signing";
 
 const chain = await startChain();
@@ -62,9 +63,9 @@ for (const variant of [
     operation,
   ];
   const write = (f: Fixture, tx: Tx) =>
-    (f.module.write as any)[variant.method](args(tx)) as Promise<Hex>;
-  const simulate = async (f: Fixture, tx: Tx) =>
-    (await (f.module.simulate as any)[variant.method](args(tx))).result;
+    invoke.write(f.module, variant.method, args(tx));
+  const simulate = (f: Fixture, tx: Tx) =>
+    invoke.simulate(f.module, variant.method, args(tx));
   const pokeTx = (f: Fixture): Tx => ({
     to: f.receiver.address,
     value: 0n,

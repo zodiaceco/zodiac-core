@@ -62,7 +62,7 @@ export default function createAssertions(client: ReceiptClient) {
 
   /** Expects `tx` to revert without any revert data. */
   async function revertWithoutReason(tx: Promise<unknown>) {
-    const data = await revertData(tx, { allowEmpty: true });
+    const data = await revertData(tx);
     assert.equal(data, "0x", `Expected a bare revert, got ${data}`);
   }
 
@@ -173,11 +173,11 @@ export default function createAssertions(client: ReceiptClient) {
   };
 }
 
-/** Awaits `tx`, expecting it to fail, and returns the raw revert data. */
-async function revertData(
-  tx: Promise<unknown>,
-  { allowEmpty = false } = {}
-): Promise<Hex> {
+/**
+ * Awaits `tx`, expecting it to fail, and returns the raw revert data: `0x` for
+ * a revert that carried none, which the node reports as empty `data`.
+ */
+async function revertData(tx: Promise<unknown>): Promise<Hex> {
   let error: unknown;
   try {
     await tx;
@@ -193,10 +193,7 @@ async function revertData(
         ? error
         : null;
   const data = found ? rawData(found) : undefined;
-  if (data === undefined) {
-    if (allowEmpty && isBareRevert(error)) return "0x";
-    throw error;
-  }
+  if (data === undefined) throw error;
   return data;
 }
 
@@ -207,12 +204,6 @@ function rawData(error: unknown): Hex | undefined {
   const nested = (data as { data?: unknown })?.data;
   if (isHex(nested)) return nested;
   return undefined;
-}
-
-/** A revert that carried no data: nodes report it without a `data` field. */
-function isBareRevert(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return /execution reverted(?!:)/i.test(message);
 }
 
 const isHex = (value: unknown): value is Hex =>

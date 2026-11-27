@@ -250,11 +250,17 @@ describe("verifyMastercopy", () => {
     );
   });
 
-  const failures: [string, Parameters<typeof withExplorer>[0], RegExp][] = [
+  const failures: [
+    string,
+    Parameters<typeof withExplorer>[0],
+    RegExp,
+    number,
+  ][] = [
     [
       "getsourcecode status not ok",
       { getsourcecode: [notOk("Invalid API Key")] },
       /Checking verification for .*Invalid API Key/,
+      1,
     ],
     [
       "submission status not ok",
@@ -263,11 +269,13 @@ describe("verifyMastercopy", () => {
         verifysourcecode: [notOk("Fail - Unable to verify")],
       },
       /Submitting source code for .*Fail - Unable to verify/,
+      2,
     ],
     [
       "V2 returns no GUID",
       { getsourcecode: [unverified], verifysourcecode: [ok("")] },
       /did not return a verification GUID/,
+      2,
     ],
     [
       "verification result is a failure",
@@ -276,6 +284,7 @@ describe("verifyMastercopy", () => {
         checkverifystatus: [notOk("Fail - Unable to verify")],
       },
       /verification guid-1 failed: .*Fail - Unable to verify/,
+      3,
     ],
     [
       "rate-limit retries are exhausted",
@@ -285,14 +294,15 @@ describe("verifyMastercopy", () => {
         ],
       },
       /is rate-limiting requests$/,
+      // The first attempt and five retries.
+      6,
     ],
   ];
-  for (const [label, answers, error] of failures) {
+  for (const [label, answers, error, requestCount] of failures) {
     it(`throws when ${label}`, async () => {
       await withExplorer(answers, async (requests) => {
         await assert.rejects(verify(), error);
-        if (label === "rate-limit retries are exhausted")
-          assert.equal(requests.length, 6);
+        assert.equal(requests.length, requestCount);
       });
     });
   }

@@ -165,6 +165,11 @@ export async function startChain() {
     return entry.result as T;
   }
 
+  /** Whether any code is deployed at `address`. */
+  async function hasCode(address: Address) {
+    return (await publicClient.getCode({ address })) !== undefined;
+  }
+
   const provider: EIP1193Provider = {
     request: (args) => publicClient.request(args as any),
   };
@@ -178,6 +183,7 @@ export async function startChain() {
     deployContract,
     deployBytecode,
     getContractAt,
+    hasCode,
     loadFixture,
     assertions: createAssertions(publicClient),
     stop: () => stopAnvil(url),
