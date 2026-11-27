@@ -10,9 +10,7 @@ coverage*
 sdk/types
 dist/
 deployments
-yarn-error.log
 .docusaurus
 .idea
-.yarn
 .vscode/settings.json
 /.vscode

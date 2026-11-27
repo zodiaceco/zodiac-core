@@ -108,7 +108,7 @@ await verifyMastercopy({
 
 ## Development
 
-Tests require [anvil](https://getfoundry.sh/introduction/installation); run `yarn test`.
+Tests require [anvil](https://getfoundry.sh/introduction/installation); run `bun run test`.
 
 ## Audits
 

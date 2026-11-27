@@ -9,12 +9,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - uses: actions/cache@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          path: |
-            **/node_modules
-          key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
-      - run: yarn
-      - run: yarn build
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # The package ships for Node, while the tests run on Bun: load the built
+      # entry points on Node, through the exports map.
+      - name: Load the built package on Node
+        run: |
+          node -e "require('@zodiaceco/core-contracts'); require('@zodiaceco/core-contracts/tooling')"
+          node --input-type=module -e "await import('@zodiaceco/core-contracts'); await import('@zodiaceco/core-contracts/tooling')"
       - uses: foundry-rs/foundry-toolchain@v1.9.2
-      - run: yarn test
+      - run: bun run test
