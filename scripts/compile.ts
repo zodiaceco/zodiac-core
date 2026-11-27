@@ -29,10 +29,15 @@ const settings = {
 };
 
 const sources: Record<string, { content: string }> = {};
-for (const entry of readdirSync(sourcesDir, { recursive: true })) {
-  const path = join(sourcesDir, String(entry));
-  if (!path.endsWith(".sol")) continue;
-  sources[relative(root, path)] = { content: readFileSync(path, "utf8") };
+const files = readdirSync(sourcesDir, { recursive: true })
+  .map(String)
+  .filter((entry) => entry.endsWith(".sol"))
+  .sort();
+for (const entry of files) {
+  const path = join(sourcesDir, entry);
+  sources[relative(root, path).replaceAll("\\", "/")] = {
+    content: readFileSync(path, "utf8"),
+  };
 }
 
 const hash = createHash("sha256")

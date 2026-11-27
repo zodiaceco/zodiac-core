@@ -6,9 +6,7 @@ const chain = await startChain();
 const { deployContract, getContractAt, loadFixture, assertions } = chain;
 
 describe("Module", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   /**
    * Deploys the TestAvatar, TestModule, and TestGuard contracts, enables the
@@ -17,7 +15,7 @@ describe("Module", () => {
   async function setupTests() {
     const [owner, wallet1] = chain.walletClients;
     const avatar = await deployContract("TestAvatar");
-    const iAvatar = await getContractAt("IAvatar", avatar.address);
+    const iAvatar = getContractAt("IAvatar", avatar.address);
     const module = await deployContract("TestModule", [
       iAvatar.address,
       iAvatar.address,

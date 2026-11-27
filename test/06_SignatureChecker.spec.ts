@@ -10,14 +10,12 @@ const chain = await startChain();
 const { deployContract, getContractAt, loadFixture, assertions } = chain;
 
 describe("SignatureChecker", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   async function setup() {
     const [signer, relayer] = chain.walletClients;
     const deployed = await deployContract("TestSignature");
-    const testSignature = await getContractAt(
+    const testSignature = getContractAt(
       "TestSignature",
       deployed.address,
       { client: { wallet: relayer } }

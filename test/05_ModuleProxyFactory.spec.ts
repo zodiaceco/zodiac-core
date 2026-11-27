@@ -19,9 +19,7 @@ const chain = await startChain();
 const { deployContract, getContractAt, assertions } = chain;
 
 describe("ModuleProxyFactory", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   const AddressOne = "0x0000000000000000000000000000000000000001";
   const saltNonce = 0x7255n;
@@ -143,7 +141,7 @@ describe("ModuleProxyFactory", () => {
         ])
       );
 
-      const newModule = await getContractAt("TestModule", moduleAddress);
+      const newModule = getContractAt("TestModule", moduleAddress);
       assert.equal(await newModule.read.avatar(), avatarAddress);
     });
 

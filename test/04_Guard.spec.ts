@@ -8,9 +8,7 @@ const chain = await startChain();
 const { deployContract, getContractAt, loadFixture, assertions } = chain;
 
 describe("Guard", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   /**
    * Deploys the TestAvatar, TestModule, TestGuard, and TestNonCompliantGuard
@@ -27,7 +25,7 @@ describe("Guard", () => {
     await avatar.write.enableModule([module.address]);
 
     const deployedGuard = await deployContract("TestGuard", [module.address]);
-    const guard = await getContractAt("TestGuard", deployedGuard.address, {
+    const guard = getContractAt("TestGuard", deployedGuard.address, {
       client: { wallet: relayer },
     });
 

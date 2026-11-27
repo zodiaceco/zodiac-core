@@ -35,9 +35,7 @@ async function setup() {
 }
 
 describe("deployProxy", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   it("Deploys a proxy at the predicted address", async () => {
     const { mastercopy, provider } = await loadFixture(setup);
@@ -70,7 +68,7 @@ describe("deployProxy", () => {
 
     assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const proxy = await getContractAt("TestModule", address);
+    const proxy = getContractAt("TestModule", address);
     assert.equal(await proxy.read.avatar(), proxyAvatar);
     assert.equal(await proxy.read.target(), proxyTarget);
 

@@ -15,9 +15,7 @@ const chain = await startChain();
 const { deployContract, loadFixture, assertions } = chain;
 
 describe("Modifier", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   /**
    * Deploys the TestAvatar and TestModifier contracts, enables the modifier

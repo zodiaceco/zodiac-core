@@ -13,9 +13,7 @@ const chain = await startChain();
 const { deployContract, loadFixture, assertions } = chain;
 
 describe("GuardableModifier", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   /**
    * Deploys the avatar, the guardable modifier and a guard, enables the

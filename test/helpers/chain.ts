@@ -29,9 +29,9 @@ const chain = { ...foundry, id: CHAIN_ID };
 const pollingInterval = 10;
 
 /**
- * Starts a private anvil chain for one test file, booted from `genesis.json`
- * (Safe 1.4.1, nothing else). Contracts from `contracts/` are deployed by the
- * tests themselves, from the artifacts `scripts/compile.ts` writes.
+ * Starts a private anvil chain for one test file. Contracts from `contracts/`
+ * are deployed by the tests themselves, from the artifacts `scripts/compile.ts`
+ * writes.
  *
  * Every chain listens on its own free port, so test files run in parallel
  * without sharing state.
@@ -198,16 +198,11 @@ function stopAnvil(url: string) {
 }
 
 function spawnAnvil(): Promise<string> {
-  // The hardfork matches the evmVersion contracts are compiled for. It has to
-  // be explicit: with `--init`, anvil ignores the genesis' fork schedule and
-  // starts at Frontier.
   const anvil = spawn(
     "anvil",
     [
-      "--init",
-      new URL("./genesis.json", import.meta.url).pathname,
-      "--hardfork",
-      "cancun",
+      "--chain-id",
+      String(CHAIN_ID),
       // anvil predeploys Nick's factory, which deployFactories has to deploy.
       "--disable-default-create2-deployer",
       "--port",
@@ -218,28 +213,42 @@ function spawnAnvil(): Promise<string> {
 
   return new Promise((resolve, reject) => {
     let output = "";
-    const onData = (chunk: Buffer) => {
+    const cleanup = () => {
+      anvil.stdout.off("data", onStdout);
+      anvil.stderr.off("data", onStderr);
+      anvil.off("error", onError);
+      anvil.off("exit", onExit);
+      anvil.stdout.resume();
+      anvil.stderr.resume();
+    };
+    const onStdout = (chunk: Buffer) => {
       output += chunk;
       const match = output.match(/Listening on (\S+)/);
       if (match) {
         const url = `http://${match[1]}`;
         processes.set(url, anvil);
-        anvil.stdout.off("data", onData);
-        anvil.stdout.resume();
+        cleanup();
         resolve(url);
       }
     };
-    anvil.stdout.on("data", onData);
-    anvil.stderr.on("data", (chunk) => (output += chunk));
-    anvil.on("error", (error) =>
+    const onStderr = (chunk: Buffer) => {
+      output += chunk;
+    };
+    const onError = (error: Error) => {
+      cleanup();
       reject(
         Object.assign(error, {
           message: `Could not start anvil (install it with foundryup): ${error.message}`,
         })
-      )
-    );
-    anvil.on("exit", (code) =>
-      reject(new Error(`anvil exited with code ${code}\n${output}`))
-    );
+      );
+    };
+    const onExit = (code: number | null) => {
+      cleanup();
+      reject(new Error(`anvil exited with code ${code}\n${output}`));
+    };
+    anvil.stdout.on("data", onStdout);
+    anvil.stderr.on("data", onStderr);
+    anvil.on("error", onError);
+    anvil.on("exit", onExit);
   });
 }

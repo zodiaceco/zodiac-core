@@ -25,9 +25,7 @@ const factories = [
 ];
 
 describe("deployFactories", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   async function codeOf(address: `0x${string}`) {
     const publicClient = chain.publicClient;

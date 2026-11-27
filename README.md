@@ -1,7 +1,6 @@
 # Zodiac Core Contracts
 
 [![Build Status](https://github.com/zodiaceco/zodiac-core/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/zodiaceco/zodiac-core/actions/workflows/ci.yml?query=branch%3Amaster)
-[![Coverage Status](https://coveralls.io/repos/github/zodiaceco/zodiac-core/badge.svg?branch=master)](https://coveralls.io/github/zodiaceco/zodiac-core?branch=master)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/gnosisguild/CODE_OF_CONDUCT)
 
 Base Solidity contracts for building [Zodiac](https://docs.zodiac.eco) modules, modifiers, and guards, plus TypeScript helpers for deterministic deployment and verification.
@@ -109,15 +108,7 @@ await verifyMastercopy({
 
 ## Development
 
-Tests need [anvil](https://getfoundry.sh/introduction/installation), installed with `foundryup`.
-
-```bash
-yarn test
-```
-
-`yarn test` compiles `contracts/` with solc-js into `build/contracts.ts` (skipped when no source changed), then runs `test/**/*.spec.ts` with `node:test`. Each test file starts its own anvil chain on a free port, booted from `test/helpers/genesis.json`, which holds the Safe 1.4.1 deployments and nothing else. The tests deploy the contracts under test themselves.
-
-`node scripts/genesis.ts [rpc-url]` regenerates the genesis from mainnet.
+Tests require [anvil](https://getfoundry.sh/introduction/installation); run `yarn test`.
 
 ## Audits
 

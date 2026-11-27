@@ -8,9 +8,7 @@ const chain = await startChain();
 const { deployContract, loadFixture, assertions } = chain;
 
 describe("IAvatar", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   async function setupTests() {
     const [user1] = chain.walletClients;

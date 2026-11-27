@@ -23,9 +23,7 @@ const avatar = "0x0000000000000000000000000000000000000123";
 const target = "0x0000000000000000000000000000000000000456";
 
 describe("deployMastercopy", () => {
-  after(async () => {
-    await chain.stop();
-  });
+  after(() => chain.stop());
 
   it("Deploys a mastercopy, at the predicted address", async () => {
     const { provider } = await loadFixture(setup);
@@ -56,7 +54,7 @@ describe("deployMastercopy", () => {
     assert.deepEqual(result, { address, noop: false });
     assert.notEqual(await publicClient.getCode({ address }), undefined);
 
-    const module = await getContractAt("TestModule", address);
+    const module = getContractAt("TestModule", address);
     assert.equal(await module.read.avatar(), avatar);
 
     assert.deepEqual(
