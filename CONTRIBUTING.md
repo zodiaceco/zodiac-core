@@ -17,7 +17,7 @@ Reading and following these guidelines will help us make the contribution proces
 
 ## Code of Conduct
 
-We take our open source community seriously and hold ourselves and other contributors to high standards of communication. By participating and contributing to this project, you agree to uphold our [Code of Conduct](https://github.com/gnosis/CODE_OF_CONDUCT).
+We take our open source community seriously and hold ourselves and other contributors to high standards of communication. By participating and contributing to this project, you agree to uphold our [Code of Conduct](https://github.com/gnosisguild/CODE_OF_CONDUCT).
 
 ## Getting Started
 
@@ -61,9 +61,9 @@ In general, we follow the ["fork-and-pull" Git workflow](https://github.com/susa
 
 ### Adding Mods To This Repo
 
-If you have built a mod or guard and want to add it to this repo, your PR should update the [README.md](/README.md) file (list items are sorted alphabetically), along with [constants.ts](/src/factory/constants.ts) and [types.ts](/src/factory/types.ts).
+This repository holds only the base contracts and deployment helpers. If you have built a module, modifier or guard and want it listed as a Zodiac compliant tool, open a PR against [zodiac-deployments](https://github.com/zodiaceco/zodiac-deployments) instead, following its [contribution guidelines](https://github.com/zodiaceco/zodiac-deployments/blob/master/CONTRIBUTING.md#adding-mods-to-this-repo).
 
-The mastercopy address provided in [constants.ts](/src/factory/constants.ts) should be a deterministic deployment that can be replayed on other networks or a canonical address should be provided for each network. Please make a companion PR to the [Zodiac Safe App](https://github.com/gnosis/zodiac-safe-app) repo if you wish for your module to also be listed in the Zodiac Safe App.
+Please make a companion PR to the [Zodiac Safe App](https://github.com/zodiaceco/zodiac-safe-app) repo if you wish for your module to also be listed in the Zodiac Safe App.
 
 ## Getting Help
 

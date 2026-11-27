@@ -1,40 +1,33 @@
-import { AbiCoder, concat, TransactionRequest } from "ethers";
+import { encodeFunctionData, type Address } from "viem";
+
+import { creationBytecode } from "./predictSingletonAddress.js";
 import {
+  abi as factoryAbi,
   address as factoryAddress,
-  iface as factoryInterface,
 } from "../factory/erc2470Factory.js";
-import { Create2Args } from "../types.js";
+
+import type { Create2Args, Transaction } from "../types.js";
 
 /**
- * Encodes the transaction request for deploying a Singleton via ERC2470Factory.
- * @param {Object} params - The function parameters.
- * @param {string} [params.factory=factoryAddress] - The address of the factory contract.
- * If not provided, the default ERC2470Factory address will be used. Note: To deploy a Singleton,
- * you don't need to explicitly pass the factory address. If you leave it blank, the default
- * `erc2470FactoryAddress` will be used.
- * @param {string} params.bytecode - The bytecode of the contract to deploy.
- * @param {Object} params.constructorArgs - The constructor arguments for the Singleton that is about to be deployed.
- * @param {any[]} params.constructorArgs.types - The types of the constructor arguments.
- * @param {any[]} params.constructorArgs.values - Values corresponding to the constructor argument types.
- * @param {string} params.salt - A deployment salt that is internally passed to create2
- * @returns {TransactionRequest} The encoded transaction request.
+ * Encodes the transaction for deploying a singleton via the ERC-2470 factory.
+ *
+ * @param params.factory - The ERC-2470 factory. Defaults to the canonical one.
+ * @param params.bytecode - The creation bytecode of the contract to deploy.
+ * @param params.constructorArgs - The constructor arguments, appended to the bytecode.
+ * @param params.salt - The bytes32 CREATE2 salt.
  */
-export default function encodeDeployTransaction({
+export default function encodeDeployVia2470Factory({
   factory = factoryAddress,
   bytecode,
-  constructorArgs: { types, values },
+  constructorArgs,
   salt,
-}: Create2Args & { factory?: string }): TransactionRequest {
-  const creationBytecode = concat([
-    bytecode,
-    AbiCoder.defaultAbiCoder().encode(types, values),
-  ]);
-
+}: Create2Args & { factory?: Address }): Transaction {
   return {
     to: factory,
-    data: factoryInterface.encodeFunctionData("deploy", [
-      creationBytecode,
-      salt,
-    ]),
+    data: encodeFunctionData({
+      abi: factoryAbi,
+      functionName: "deploy",
+      args: [creationBytecode({ bytecode, constructorArgs }), salt],
+    }),
   };
 }

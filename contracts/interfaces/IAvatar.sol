@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: LGPL-3.0-only
-
-/// @title Zodiac Avatar - A contract that manages modules that can execute transactions via this contract.
-pragma solidity ^0.8.24;
+// Copyright (c) 2026 Zodiac Labs GmbH
+// Zodiac Core Contracts
+pragma solidity >=0.8.28 <0.9.0;
 
 import "../core/Operation.sol";
 
+/// @title Zodiac Avatar - A contract that manages modules that can execute transactions via this contract.
 interface IAvatar {
   event EnabledModule(address module);
   event DisabledModule(address module);

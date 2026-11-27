@@ -1,21 +1,19 @@
-import populateDeployProxy from "../encoding/encodeDeployProxy.js";
+import type { Address, Hex } from "viem";
+
+import encodeDeployProxy from "../encoding/encodeDeployProxy.js";
 import predictProxyAddress from "../encoding/predictProxyAddress.js";
 import waitForTransaction from "./waitForTransaction.js";
 
-import { EIP1193Provider } from "../types.js";
+import type { AbiArgs, EIP1193Provider } from "../types.js";
 
 /**
- * Deploys a Mod instance as a MinimalProxy via ZodiacModProxyFactory
+ * Deploys a Mod instance as a minimal proxy via the ModuleProxyFactory.
+ * Returns `noop: true` if bytecode already exists at the predicted address.
  *
- * @param {Object} params - The function parameters.
- * @param {string} params.mastercopy - The address of the mastercopy contract.
- * @param {Object} params.setupArgs - The arguments for the setup function.
- * @param {any[]} params.setupArgs.types - The types of the setup arguments.
- * @param {any[]} params.setupArgs.values - The values of the setup arguments.
- * @param {string | number | bigint} params.saltNonce - The salt nonce used to predict the proxy address.
- * @param {EIP1193Provider} params.provider - The EIP1193 compliant provider to interact with the blockchain.
- *
- * @returns {Promise<{ address: string; noop: boolean }>} The address of the deployed proxy contract and a noop flag indicating if the deployment was a no-operation.
+ * @param params.mastercopy - The address of the mastercopy contract.
+ * @param params.setupArgs - The Mod setup args, ABI-encoded into the `setUp` call.
+ * @param params.saltNonce - The salt nonce used in the proxy deployment.
+ * @param params.provider - EIP-1193 provider to send the deployment transaction.
  */
 export default async function deployModuleAsProxy({
   mastercopy,
@@ -23,11 +21,11 @@ export default async function deployModuleAsProxy({
   saltNonce,
   provider,
 }: {
-  mastercopy: string;
-  setupArgs: { types: any[]; values: any[] };
-  saltNonce: string | number | bigint;
+  mastercopy: Address;
+  setupArgs: AbiArgs;
+  saltNonce: bigint | number | string;
   provider: EIP1193Provider;
-}): Promise<{ address: string; noop: boolean }> {
+}): Promise<{ address: Address; noop: boolean }> {
   const address = predictProxyAddress({
     mastercopy,
     setupArgs,
@@ -42,7 +40,7 @@ export default async function deployModuleAsProxy({
     return { address, noop: true };
   }
 
-  const transaction = populateDeployProxy({
+  const transaction = encodeDeployProxy({
     mastercopy,
     setupArgs,
     saltNonce,
@@ -51,7 +49,7 @@ export default async function deployModuleAsProxy({
   const hash = (await provider.request({
     method: "eth_sendTransaction",
     params: [transaction],
-  })) as string;
+  })) as Hex;
   await waitForTransaction(hash, provider);
 
   return { address, noop: false };

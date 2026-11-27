@@ -12,13 +12,19 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - uses: actions/cache@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          path: "**/node_modules"
-          key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
-      - run: yarn
-      - run: yarn build
-      - run: yarn coverage
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # The package ships for Node, while the tests run on Bun: load the built
+      # entry points on Node, through the exports map.
+      - name: Load the built package on Node
+        run: |
+          node -e "require('@zodiaceco/core-contracts'); require('@zodiaceco/core-contracts/tooling')"
+          node --input-type=module -e "await import('@zodiaceco/core-contracts'); await import('@zodiaceco/core-contracts/tooling')"
+      - uses: foundry-rs/foundry-toolchain@v1.9.2
+      - run: bun run test
 
   publish-npm:
     needs: build
@@ -31,11 +37,23 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - run: yarn
-      - run: yarn build
-      # npm authenticates through the trusted publisher for this workflow.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.5
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      # Authenticates via OIDC against the trusted publisher configured at
+      # npmjs.com/package/@zodiaceco/core-contracts/access, bound to this repo +
+      # this workflow filename.
       - name: Publish to npm
         run: |
+          # The release tag must match the version being published.
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Release tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+
           # If the release is marked as latest on GitHub, omit the npm tag and
           # let npm default to latest. Otherwise publish under the major version
           # line, for example v-3.

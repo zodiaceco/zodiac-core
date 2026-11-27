@@ -54,6 +54,7 @@ Please choose one of the below templates for your PR, feel free to delete any re
 
 This PR:
 
-- [ ] Adds details of the module to the [README](../../README.md) (items are sorted alphabetically)
-- [ ] Adds addresses of the canonical deployments of the mastercopy for your module to [deployments.json](../../src/deployments.json), along with addresses and ABI details to [constants.ts](../../src/factory/constants.ts). Ideally these should be deterministic deployments that can be easily replicated on other supported networks.
+- [ ] Adds details of the module to the [README](https://github.com/zodiaceco/zodiac-deployments/blob/master/README.md) (items are sorted alphabetically)
+- [ ] Registers the module and the canonical address of its mastercopy, per version, in [contracts.ts](https://github.com/zodiaceco/zodiac-deployments/blob/master/src/sdk/contracts.ts). Ideally these should be deterministic deployments that can be easily replicated on other supported networks.
+- [ ] Adds the extracted mastercopy (`bun run extract <name> <version>`) to `mastercopies/` and regenerates the SDK ABIs (`bun run abigen`).
 - [ ] Includes an audit from a reputable auditor.

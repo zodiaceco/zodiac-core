@@ -1,4 +1,6 @@
-import { EIP1193Provider } from "../types.js";
+import type { Hex } from "viem";
+
+import type { EIP1193Provider } from "../types.js";
 
 /**
  * Waits for a transaction to be mined and returns the transaction receipt.
@@ -8,7 +10,7 @@ import { EIP1193Provider } from "../types.js";
  * @returns {Promise<void>} A promise that resolves once the transaction receipt is obtained.
  */
 export default async function waitForTransaction(
-  hash: string,
+  hash: Hex,
   provider: EIP1193Provider
 ): Promise<void> {
   let receipt;

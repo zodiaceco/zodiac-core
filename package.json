@@ -1,7 +1,7 @@
 {
-  "name": "@gnosis-guild/zodiac-core",
-  "version": "4.3.1",
-  "description": "Zodiac is a composable design philosophy and collection of standards for building DAO ecosystem tooling.",
+  "name": "@zodiaceco/core-contracts",
+  "version": "5.0.0",
+  "description": "Base contracts for building Zodiac modules, modifiers and guards, with helpers to encode, deploy and verify them.",
   "author": "Auryn Macmillan <auryn@gnosisguild.org>",
   "license": "LGPL-3.0+",
   "type": "module",
@@ -37,19 +37,19 @@
     "LICENSE",
     "README.md",
     "dist",
-    "contracts"
+    "contracts",
+    "!contracts/test"
   ],
   "scripts": {
-    "build": "hardhat compile && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json",
-    "postbuild": "node postbuild.mjs",
     "clean": "rm -rf dist build",
-    "test": "hardhat test",
-    "coverage": "hardhat --coverage test",
-    "format": "yarn format:sol && yarn format:ts",
+    "compile": "bun scripts/compile.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.esm.json && tsc -p tsconfig.cjs.json",
+    "postbuild": "bun postbuild.mjs",
+    "test": "bun run compile && bun test",
+    "typecheck": "bun run compile && tsc -p tsconfig.json --noEmit",
+    "format": "bun run format:sol && bun run format:ts",
     "format:sol": "prettier --write --plugin=prettier-plugin-solidity ./contracts/**/*.sol",
-    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./*.ts",
-    "prepare": "yarn clean && yarn build",
-    "prerelease": "yarn clean && yarn build"
+    "format:ts": "prettier --write ./src/**/*.ts ./test/**/*.ts ./scripts/**/*.ts"
   },
   "directories": {
     "test": "test"
@@ -59,27 +59,14 @@
     "url": "git+https://github.com/zodiaceco/zodiac-core.git"
   },
   "devDependencies": {
-    "@nomicfoundation/hardhat-ethers": "4.0.10",
-    "@nomicfoundation/hardhat-ethers-chai-matchers": "3.0.7",
-    "@nomicfoundation/hardhat-ignition": "3.1.4",
-    "@nomicfoundation/hardhat-ignition-ethers": "3.1.4",
-    "@nomicfoundation/hardhat-keystore": "3.0.8",
-    "@nomicfoundation/hardhat-mocha": "3.0.18",
-    "@nomicfoundation/hardhat-network-helpers": "3.0.7",
-    "@nomicfoundation/hardhat-verify": "3.0.16",
-    "@nomicfoundation/ignition-core": "3.1.4",
-    "@types/chai": "5.2.3",
-    "@types/mocha": "10.0.10",
-    "@types/node": "24.13.3",
-    "chai": "6.2.2",
-    "hardhat": "3.4.4",
-    "mocha": "11.7.5",
-    "prettier": "3.8.3",
-    "prettier-plugin-solidity": "2.3.1",
-    "typescript": "6.0.3"
+    "@types/node": "24.19.4",
+    "prettier": "3.10.1",
+    "prettier-plugin-solidity": "2.5.0",
+    "solc": "0.8.30",
+    "typescript": "7.0.2"
   },
   "dependencies": {
-    "ethers": "6.16.0"
+    "viem": "^2.58.8"
   },
-  "packageManager": "yarn@1.22.19+sha512.ff4579ab459bb25aa7c0ff75b62acebe576f6084b36aa842971cf250a5d8c6cd3bc9420b22ce63c7f93a0857bc6ef29291db39c3e7a23aab5adfd5a4dd6c5d71"
+  "packageManager": "bun@1.4.5"
 }

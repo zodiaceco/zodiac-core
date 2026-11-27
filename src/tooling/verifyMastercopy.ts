@@ -1,22 +1,19 @@
+import type { Address } from "viem";
+
 import { verifySourceCode } from "./etherscan.js";
+import type { AbiArgs } from "../types.js";
 
 /**
- * Verifies a Mastercopy contract on an Etherscan-like block explorer.
+ * Verifies a mastercopy contract on an Etherscan-compatible block explorer.
+ * Returns `noop: true` if the contract is already verified.
  *
- * On Etherscan V2, this function waits for the explorer to confirm verification.
- * Legacy explorer endpoints return after accepting the verification submission.
+ * On Etherscan V2, waits for verification confirmation. Legacy explorer
+ * endpoints return once the submission is accepted.
  *
- * @param {Object} params - The parameters required for verification.
- * @param {number} params.chainId - The chain ID.
- * @param {string} params.apiKey - The API key for authenticating requests to the block explorer.
- * @param {Object} params.artifact - The contract data, including the Solidity standard JSON input with its dependencies and library settings.
- * @param {string} [params.apiUrl] - Optional custom API URL. If not provided, will use the default for the chain.
- *
- * @returns {Promise<{ address: string; noop: boolean }>} A promise that resolves to an object containing:
- * - `address` (string): The address of the verified Mastercopy contract.
- * - `noop` (boolean): A flag indicating if the contract was already verified.
- *
- * @throws {Error} Throws an error if the verification process fails or if the provided parameters are invalid.
+ * @param params.chainId - The chain ID.
+ * @param params.apiKey - API key for the block explorer.
+ * @param params.artifact - Contract metadata and Solidity standard JSON input (including dependencies and library settings).
+ * @param params.apiUrl - Optional custom explorer API URL (defaults to Etherscan V2 for the chain).
  */
 export default async function verifyMastercopy({
   chainId,
@@ -31,15 +28,12 @@ export default async function verifyMastercopy({
     sourceName: string;
     compilerVersion: string;
     compilerInput: unknown;
-    address: string;
-    constructorArgs: {
-      types: readonly string[];
-      values: readonly unknown[];
-    };
+    address: Address;
+    constructorArgs: AbiArgs;
   };
   apiUrl?: string;
 }): Promise<{
-  address: string;
+  address: Address;
   noop: boolean;
 }> {
   const { noop } = await verifySourceCode({

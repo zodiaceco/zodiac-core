@@ -12,6 +12,11 @@ export {
   predictProxyAddress,
 };
 
-import type { EIP1193Provider } from "./types.js";
+import type {
+  AbiArgs,
+  Create2Args,
+  EIP1193Provider,
+  Transaction,
+} from "./types.js";
 
-export type { EIP1193Provider };
+export type { AbiArgs, Create2Args, EIP1193Provider, Transaction };
