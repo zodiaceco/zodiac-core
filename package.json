@@ -1,7 +1,7 @@
 {
-  "name": "@gnosis-guild/zodiac-core",
-  "version": "4.3.1",
-  "description": "Zodiac is a composable design philosophy and collection of standards for building DAO ecosystem tooling.",
+  "name": "@zodiaceco/core-contracts",
+  "version": "5.0.0",
+  "description": "Base contracts for building Zodiac modules, modifiers and guards, with helpers to encode, deploy and verify them.",
   "author": "Auryn Macmillan <auryn@gnosisguild.org>",
   "license": "LGPL-3.0+",
   "type": "module",

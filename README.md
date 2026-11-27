@@ -1,142 +1,118 @@
-# Zodiac-Core
+# Zodiac Core Contracts
 
-[![Build Status](https://github.com/gnosisguild/zodiac/workflows/zodiac/badge.svg?branch=master)](https://github.com/gnosisguild/zodiac/actions?branch=master)
-[![Coverage Status](https://coveralls.io/repos/github/gnosis/zodiac/badge.svg?branch=master)](https://coveralls.io/github/gnosisguild/zodiac?branch=master)
+[![Build Status](https://github.com/zodiaceco/zodiac-core/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/zodiaceco/zodiac-core/actions/workflows/ci.yml?query=branch%3Amaster)
+[![Coverage Status](https://coveralls.io/repos/github/zodiaceco/zodiac-core/badge.svg?branch=master)](https://coveralls.io/github/zodiaceco/zodiac-core?branch=master)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](https://github.com/gnosisguild/CODE_OF_CONDUCT)
 
-This package includes the base [Zodiac](https://github.com/gnosisguild/zodiac) contracts and interfaces from which Zodiac components are derived. It also includes a browser-safe TypeScript SDK for encoding module deployments and a separate tooling entrypoint for deployment and verification workflows.
+Base Solidity contracts for building [Zodiac](https://docs.zodiac.eco) modules, modifiers, and guards, plus TypeScript helpers for deterministic deployment and verification.
 
-## Base Contracts
+Canonical mastercopy deployments and ABIs live in [zodiac-deployments](https://github.com/zodiaceco/zodiac-deployments) (`@zodiaceco/deployments`).
 
-[**`Module.sol`**](/contracts/core/Module.sol)
+## Installation
 
-Modules are contracts enabled by an Avatar that implement some decision making logic. They should import Module.sol.
-
-[**`GuardableModule.sol`**](/contracts/core/GuardableModule.sol)
-
-A module with a guard enabled that can check transactions before and after execution. Useful for limiting the scope of addresses and functions that a module can call or ensure a certain state is never changed by a module.
-
-[**`Modifier.sol`**](/contracts/core/Modifier.sol)
-
-Modifiers are contracts that sit between Modules and Avatars to modify the Module's behavior. For example, they might enforce a delay on all functions a Module attempts to execute. Modifiers should import Modifier.sol and must expose an interface like IAvatar.sol
-
-[**`GuardableModifier.sol`**](/contracts/core/GuardableModifier.sol)
-
-A modifier with a guard enabled that can check transactions before and after execution. Useful for limiting the scope of addresses and functions that a modifier can call or ensure a certain state is never changed by a modifier.
-
-## SDK
-
-The SDK provides functions for encoding, deploying, and verifying Zodiac modules.
-
-### Encoding
-
-The functions in this section produce (but do not execute) payloads that when executed create mastercopies and module instances. These functions are commonly used in apps for deploying new instances of a Zodiac compliant module or modifier, as their payloads can be deployed by any connected account.
-
-#### `encodeDeployProxy`
-
-Generates a payload for deploying a new instance of a module/modifier - the new instance is a minimal proxy, deploy via ZodiacModuleProxyFactory and pointing to a module/modifier mastercopy.
-
-```ts
-import { encodeDeployProxy } from "@gnosis-guild/zodiac-core";
-
-const transaction = await encodeDeployProxy({
-  mastercopy: "0x<address>",
-  setupArgs: { types: ["address", "uint256"], values: ["0x<address>", 0] },
-  salt: "0x<bytes32>",
-});
+```bash
+npm install @zodiaceco/core-contracts
 ```
 
-#### `predictProxyAddress`
+## Contracts
 
-Predicts the address of a new module instance, deployed via ZodiacModuleProxyFactory. Useful for deploying and making calls to a module or modifier in one multisend transaction.
+Import from `@zodiaceco/core-contracts/contracts/...`:
+
+- [`core/Module.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/core/Module.sol) — base contract for modules enabled on an Avatar (`exec`, `execAndReturnData`).
+- [`core/Modifier.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/core/Modifier.sol) — sits between modules and an Avatar (`IAvatar`) with `moduleOnly` and EIP-712/ERC-1271 `moduleOnlySigned` auth.
+- [`core/GuardableModule.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/core/GuardableModule.sol), [`core/GuardableModifier.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/core/GuardableModifier.sol) — `Module` and `Modifier` with optional pre/post transaction guards.
+- [`guard/BaseGuard.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/guard/BaseGuard.sol) — `BaseGuard` and `BaseModuleGuard` base implementations.
+- [`factory/ModuleProxyFactory.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/factory/ModuleProxyFactory.sol) — deploys deterministic minimal proxies pointing to a mastercopy.
+- [`interfaces/IAvatar.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/interfaces/IAvatar.sol), [`interfaces/IGuard.sol`](https://github.com/zodiaceco/zodiac-core/blob/master/contracts/interfaces/IGuard.sol) — core Avatar and Guard interfaces.
+
+## Deployment Helpers
+
+### Encoding (`@zodiaceco/core-contracts`)
+
+Browser-safe functions that encode `{ to, data }` deployment payloads and predict deterministic addresses.
 
 ```ts
-import { predictProxyAddress } from "@gnosis-guild/zodiac-core";
+import {
+  encodeDeployProxy,
+  predictProxyAddress,
+} from "@zodiaceco/core-contracts";
 
-const transaction = await predictProxyAddress({
-  mastercopy: "0x<address>",
-  setupArgs: { types: ["address", "uint256"], values: ["0x<address>", 0] },
-  salt: "0x<bytes32>",
-});
+const args = {
+  mastercopy: "0x...",
+  setupArgs: { types: ["address", "uint256"], values: ["0x...", 0] },
+  saltNonce: 0,
+};
+
+const tx = encodeDeployProxy(args);
+const address = predictProxyAddress(args);
 ```
 
-### Deployment
-
-The functions in this section accept an EIP1193-compliant provider and execute transactions that create mastercopies and module instances. Commonly used in contract infrastructure with a provider like hardhat when developing new modules or modifiers.
-
-#### `deployFactories`
-
-Deploys all factories within a specified network. Typically, these factories are already deployed across networks; however, this function is useful for test setups.
-
 ```ts
-import { deployFactories } from "@gnosis-guild/zodiac-core/tooling";
+import {
+  encodeDeploySingleton,
+  predictSingletonAddress,
+} from "@zodiaceco/core-contracts";
 
-await deployFactories({
-  provider, // an EIP1193 compliant provider
-});
+const args = {
+  bytecode: "0x...",
+  constructorArgs: { types: ["uint256"], values: [0] },
+  salt: "0x...",
+};
+
+const tx = encodeDeploySingleton(args);
+const address = predictSingletonAddress(args);
 ```
 
-#### `deployMastercopy`
+### Tooling (`@zodiaceco/core-contracts/tooling`)
 
-Deploys a mastercopy using the ERC2470 factory. If the master copy is already deployed, this script will perform no operation. Returns an object containing the mastercopy address and a boolean indicating whether the master copy was previously deployed.
+Executes deployments via an EIP-1193 `provider` and verifies mastercopies. Deployment helpers are idempotent (`noop: true` if bytecode already exists).
 
 ```ts
-import { deployMastercopy } from "@gnosis-guild/zodiac-core/tooling";
+import {
+  deployFactories,
+  deployMastercopy,
+  deployProxy,
+  verifyMastercopy,
+} from "@zodiaceco/core-contracts/tooling";
 
-await deployMastercopy({
-  bytecode, // the mastercopy bytecode
-  constructorArgs: { // mastercopy creation args
-    types: ["uint256", "...more constructor types"]
-    values: ["0", "...more constructor values"]
-  },
-  salt, // create2 salt
-  provider, // an EIP1193 compliant provider
+// Deploy Nick's, ERC-2470, and ModuleProxyFactory (for local/test networks)
+await deployFactories({ provider });
+
+const mastercopy = await deployMastercopy({
+  bytecode,
+  constructorArgs: { types: ["uint256"], values: [0] },
+  salt,
+  provider,
 });
-```
 
-#### `deployProxy`
-
-Deploys a module instance as a proxy using the ZodiacModuleProxyFactory. If an instance with the same saltNonce already exists, this function does nothing. Returns an object containing the module instance address and a boolean indicating whether the master copy was previously deployed.
-
-```ts
-import { deployProxy } from "@gnosis-guild/zodiac-core/tooling";
-
-await deployProxy({
-  mastercopy, // the mastercopy address
-  setupArgs: { // instance setup args
-    types: ["uint256", "...more setup types"]
-    values: ["0", "...more setup values"]
-  },
-  saltNonce, // an integer, used to salt proxy deployment
-  provider, // an EIP1193 compliant provider
+const proxy = await deployProxy({
+  mastercopy: mastercopy.address,
+  setupArgs: { types: ["address", "uint256"], values: [owner, 0] },
+  saltNonce: 0,
+  provider,
 });
-```
 
-### Verification
-
-**verifyMastercopy**
-
-Checks whether a mastercopy is already verified and submits its source code if needed. On Etherscan V2, it waits for the verification result. With a legacy explorer URL, it returns once the explorer accepts the submission. Pass the Solidity standard JSON input in `artifact.compilerInput`, including imported sources and any linked library addresses in `settings.libraries`.
-
-```ts
-import { verifyMastercopy } from "@gnosis-guild/zodiac-core/tooling";
-
-const result = await verifyMastercopy({
+// Verifies via Etherscan V2 (or pass `apiUrl` for custom/legacy explorers)
+await verifyMastercopy({
   chainId: 1,
-  apiKey: "YourEtherscanApiKey",
+  apiKey,
   artifact: {
-    contractName: "MyContract",
-    sourceName: "MyContract.sol",
-    compilerVersion: "v0.8.0+commit.c7dfd78e",
-    compilerInput: {},
-    address: "0x1234567890abcdef1234567890abcdef12345678",
-    constructorArgs: {
-      types: ["uint256"],
-      values: [42],
-    },
+    contractName: "MyModule",
+    sourceName: "contracts/MyModule.sol",
+    compilerVersion: "v0.8.30+commit.73712a01",
+    compilerInput,
+    address: mastercopy.address,
+    constructorArgs: { types: ["uint256"], values: [0] },
   },
-  apiUrl: "https://api.customnet.io/api", // Optional custom API URL
 });
-
-console.log(result);
 ```
+
+## Audits
+
+- [September 2021](https://github.com/zodiaceco/zodiac-core/blob/master/audits/GnosisZodiac2021Sep.pdf) (G0 Group) — initial Zodiac contracts
+- [February 2023](https://github.com/zodiaceco/zodiac-core/blob/master/audits/ZodiacModifierUpdateFeb2023.pdf) — modifier update
+- [October 2026](https://github.com/zodiaceco/zodiac-core/blob/master/audits/ZodiacOctober2026.pdf) (Côme du Crest) — zodiac-core and [Roles](https://github.com/zodiaceco/zodiac-modifier-roles) v3
+
+## License
+
+[LGPL-3.0+](https://github.com/zodiaceco/zodiac-core/blob/master/LICENSE). Provided without warranty of any kind.

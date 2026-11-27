@@ -33,9 +33,18 @@ jobs:
           node-version: 24
       - run: yarn
       - run: yarn build
-      # npm authenticates through the trusted publisher for this workflow.
+      # Authenticates via OIDC against the trusted publisher configured at
+      # npmjs.com/package/@zodiaceco/core-contracts/access, bound to this repo +
+      # this workflow filename.
       - name: Publish to npm
         run: |
+          # The release tag must match the version being published.
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::Release tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+
           # If the release is marked as latest on GitHub, omit the npm tag and
           # let npm default to latest. Otherwise publish under the major version
           # line, for example v-3.
