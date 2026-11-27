@@ -60,6 +60,12 @@ export default function createAssertions(client: ReceiptClient) {
     await revertData(tx);
   }
 
+  /** Expects `tx` to revert without any revert data. */
+  async function revertWithoutReason(tx: Promise<unknown>) {
+    const data = await revertData(tx, { allowEmpty: true });
+    assert.equal(data, "0x", `Expected a bare revert, got ${data}`);
+  }
+
   /** Expects `tx` to revert with `Error(reason)`, as `require(cond, reason)`. */
   async function revertWith(tx: Promise<unknown>, reason: string) {
     const data = await revertData(tx);
@@ -131,19 +137,47 @@ export default function createAssertions(client: ReceiptClient) {
     assert.equal(logs.length, 0, `Expected "${eventName}" not to be emitted`);
   }
 
+  /**
+   * Expects `tx` to succeed and returns the events that any of `contracts`
+   * emitted, in log order.
+   */
+  async function events(tx: Promise<Hash>, contracts: readonly Contract[]) {
+    const receipt = await client.waitForTransactionReceipt({ hash: await tx });
+    assert.equal(receipt.status, "success", "Transaction reverted");
+    return receipt.logs.flatMap((log) => {
+      const contract = contracts.find((c) =>
+        isAddressEqual(c.address, log.address)
+      );
+      if (!contract) return [];
+      return parseEventLogs({
+        abi: contract.abi as Abi,
+        logs: [log as any],
+      }).map(({ eventName, args }) => ({
+        address: contract.address,
+        eventName,
+        args: args as Record<string, unknown>,
+      }));
+    });
+  }
+
   return {
     revert,
+    revertWithoutReason,
     revertWith,
     revertWithCustomError,
     revertWithCustomErrorWithArgs,
     emit,
     emitWithArgs,
     notEmit,
+    events,
   };
 }
 
 /** Awaits `tx`, expecting it to fail, and returns the raw revert data. */
-async function revertData(tx: Promise<unknown>): Promise<Hex> {
+async function revertData(
+  tx: Promise<unknown>,
+  { allowEmpty = false } = {}
+): Promise<Hex> {
   let error: unknown;
   try {
     await tx;
@@ -159,7 +193,10 @@ async function revertData(tx: Promise<unknown>): Promise<Hex> {
         ? error
         : null;
   const data = found ? rawData(found) : undefined;
-  if (data === undefined) throw error;
+  if (data === undefined) {
+    if (allowEmpty && isBareRevert(error)) return "0x";
+    throw error;
+  }
   return data;
 }
 
@@ -170,6 +207,12 @@ function rawData(error: unknown): Hex | undefined {
   const nested = (data as { data?: unknown })?.data;
   if (isHex(nested)) return nested;
   return undefined;
+}
+
+/** A revert that carried no data: nodes report it without a `data` field. */
+function isBareRevert(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /execution reverted(?!:)/i.test(message);
 }
 
 const isHex = (value: unknown): value is Hex =>

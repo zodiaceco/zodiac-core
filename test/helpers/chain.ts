@@ -5,10 +5,13 @@ import {
   createTestClient,
   createWalletClient,
   custom,
+  getAddress,
   getContract,
   http,
+  numberToHex,
   type Address,
   type ContractConstructorArgs,
+  type Hex,
   type GetContractReturnType,
 } from "viem";
 import { foundry } from "viem/chains";
@@ -40,35 +43,12 @@ export async function startChain() {
   const url = await spawnAnvil();
   const rpc = http(url)({ chain, retryCount: 0 });
 
-  // Transactions behave as on an in-process node: a transaction that would
-  // revert is rejected when sent, and one that is sent is mined by the time
-  // its hash is returned.
-  //  - anvil mines reverting transactions, dropping the revert data. Gas
-  //    estimation fails on them instead, with the revert data on the error,
-  //    which is what the assertions decode.
-  //  - anvil answers before the block exists, so a read or snapshot right
-  //    after a write could still see the state before it.
-  const transport = custom(
-    {
-      async request({ method, params }) {
-        if (method !== "eth_sendTransaction") {
-          return rpc.request({ method, params });
-        }
-        await rpc.request({ method: "eth_estimateGas", params: [params[0]] });
-        const hash = await rpc.request({ method, params });
-        while (
-          !(await rpc.request({
-            method: "eth_getTransactionReceipt",
-            params: [hash],
-          }))
-        ) {
-          await new Promise((resolve) => setTimeout(resolve, 1));
-        }
-        return hash;
-      },
-    },
-    { retryCount: 0 }
-  );
+  const transport = createTransport(rpc);
+  // The test wallets send every transaction with a fixed, generous gas limit.
+  // anvil's estimate only covers the outer call: an inner call that runs out
+  // of gas fails without reverting it (an avatar reporting `success: false`),
+  // so an estimated limit would make such calls fail silently.
+  const walletTransport = createTransport(rpc, { gas: WALLET_GAS });
 
   const publicClient = createPublicClient({
     chain,
@@ -88,7 +68,12 @@ export async function startChain() {
     transport,
   }).getAddresses();
   const walletClients = accounts.map((account) =>
-    createWalletClient({ account, chain, transport, pollingInterval })
+    createWalletClient({
+      account,
+      chain,
+      transport: walletTransport,
+      pollingInterval,
+    })
   );
 
   type PublicClient = typeof publicClient;
@@ -129,7 +114,23 @@ export async function startChain() {
     if (status !== "success" || !contractAddress) {
       throw new Error(`Deploying ${name} failed`);
     }
-    return getContractAt(name, contractAddress, options);
+    return getContractAt(name, getAddress(contractAddress), options);
+  }
+
+  /** Deploys raw creation `bytecode` and waits for it to be mined. */
+  async function deployBytecode(
+    bytecode: Hex,
+    wallet: WalletClient = walletClients[0]
+  ): Promise<Address> {
+    const hash = await wallet.sendTransaction({ data: bytecode } as Parameters<
+      WalletClient["sendTransaction"]
+    >[0]);
+    const { contractAddress, status } =
+      await publicClient.waitForTransactionReceipt({ hash });
+    if (status !== "success" || !contractAddress) {
+      throw new Error("Deploying bytecode failed");
+    }
+    return getAddress(contractAddress);
   }
 
   const fixtures: { fixture: Function; id: `0x${string}`; result: unknown }[] =
@@ -175,6 +176,7 @@ export async function startChain() {
     walletClients,
     provider,
     deployContract,
+    deployBytecode,
     getContractAt,
     loadFixture,
     assertions: createAssertions(publicClient),
@@ -183,6 +185,50 @@ export async function startChain() {
 }
 
 export type Chain = Awaited<ReturnType<typeof startChain>>;
+
+const WALLET_GAS = 10_000_000n;
+
+/**
+ * Transactions behave as on an in-process node: a transaction that would
+ * revert is rejected when sent, and one that is sent is mined by the time its
+ * hash is returned.
+ *  - anvil mines reverting transactions, dropping the revert data. Gas
+ *    estimation fails on them instead, with the revert data on the error,
+ *    which is what the assertions decode.
+ *  - anvil answers before the block exists, so a read or snapshot right after
+ *    a write could still see the state before it.
+ *
+ * With `gas`, every transaction is sent with that gas limit.
+ */
+function createTransport(
+  rpc: ReturnType<ReturnType<typeof http>>,
+  { gas }: { gas?: bigint } = {}
+) {
+  return custom(
+    {
+      async request({ method, params }) {
+        if (method !== "eth_sendTransaction") {
+          return rpc.request({ method, params });
+        }
+        const transaction = gas
+          ? { ...params[0], gas: numberToHex(gas) }
+          : params[0];
+        await rpc.request({ method: "eth_estimateGas", params: [transaction] });
+        const hash = await rpc.request({ method, params: [transaction] });
+        while (
+          !(await rpc.request({
+            method: "eth_getTransactionReceipt",
+            params: [hash],
+          }))
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+        return hash;
+      },
+    },
+    { retryCount: 0 }
+  );
+}
 
 const processes = new Map<string, ReturnType<typeof spawn>>();
 
